@@ -1,10 +1,108 @@
-# Python-generated files
+# ==========================================
+# Python
+# ==========================================
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
 wheels/
-*.egg-info
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Virtual environments
-.venv
+# ==========================================
+# Virtuelle Umgebungen
+# ==========================================
+.venv/
+venv/
+env/
+ENV/
+
+# ==========================================
+# uv
+# ==========================================
+.uv/
+
+# ==========================================
+# Tests / Coverage
+# ==========================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# ==========================================
+# Type Checking
+# ==========================================
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+
+# ==========================================
+# Secrets & Konfiguration
+# ==========================================
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# ==========================================
+# Editor / IDE
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# ==========================================
+# OS
+# ==========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# Logs / Temp
+# ==========================================
+*.log
+logs/
+tmp/
+temp/
+
+# ==========================================
+# Docker / Datenbanken (lokale Volumes)
+# ==========================================
+.docker-data/
+postgres-data/
+pgdata/
+
+# ==========================================
+# Jupyter / Notebooks
+# ==========================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
