@@ -1,0 +1,88 @@
+# Kontura AI - Lokale Entwicklungs-Infrastruktur
+#
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# Logs:   docker compose logs -f
+# Reset:  docker compose down -v   (loescht ALLE Daten!)
+
+services:
+
+  # ==========================================
+  # PostgreSQL 16 mit pgvector (fuer RAG-Embeddings)
+  # ==========================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: kontura-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kontura}
+      POSTGRES_USER: ${POSTGRES_USER:-kontura}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_local_password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kontura} -d ${POSTGRES_DB:-kontura}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - kontura-net
+
+  # ==========================================
+  # Redis 7 (Cache + spaetere Queue)
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    container_name: kontura-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - kontura-net
+
+  # ==========================================
+  # Adminer - Web-UI fuer PostgreSQL
+  # ==========================================
+  adminer:
+    image: adminer:latest
+    container_name: kontura-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: dracula
+    networks:
+      - kontura-net
+
+# ==========================================
+# Persistente Volumes (ueberleben Container-Neustarts)
+# ==========================================
+volumes:
+  postgres-data:
+    name: kontura-postgres-data
+  redis-data:
+    name: kontura-redis-data
+
+# ==========================================
+# Internes Netzwerk (Services finden sich per Name)
+# ==========================================
+networks:
+  kontura-net:
+    name: kontura-net
+    driver: bridge

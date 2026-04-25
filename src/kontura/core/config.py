@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Zentrale Konfiguration für Kontura AI."""
+    """Zentrale Konfiguration fuer Kontura AI."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -29,6 +29,18 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = Field(default="INFO")
+
+    # Datenbank
+    database_url: str = Field(
+        default="postgresql+asyncpg://kontura:dev_local_password@localhost:5432/kontura",
+        description="Async-PostgreSQL-Connection-String (asyncpg-Treiber)",
+    )
+
+    # Redis
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        description="Redis-Connection-String fuer Cache und Queues",
+    )
 
 
 settings = Settings()
