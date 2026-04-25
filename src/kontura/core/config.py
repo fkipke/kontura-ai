@@ -31,8 +31,9 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
 
     # Datenbank
+    # Port 5433 default, da 5432 oft von anderen Postgres-Installationen belegt ist.
     database_url: str = Field(
-        default="postgresql+asyncpg://kontura:dev_local_password@localhost:5432/kontura",
+        default="postgresql+asyncpg://kontura:dev_local_password@localhost:5433/kontura",
         description="Async-PostgreSQL-Connection-String (asyncpg-Treiber)",
     )
 

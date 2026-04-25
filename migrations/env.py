@@ -1,17 +1,16 @@
 """Alembic-Umgebung fuer Kontura AI.
 
 Senior-Setup:
-- Async-Engine wird zur Laufzeit aus kontura.infra.db importiert
-- DB-URL kommt aus settings (Single-Source-of-Truth)
-- target_metadata = Base.metadata fuer Autogenerate
+- Alembic laeuft SYNCHRON (Driver: psycopg).
+- Die App selbst nutzt weiterhin asyncpg.
+- DB-URL kommt aus settings, asyncpg-URL wird zu psycopg-URL konvertiert.
+- target_metadata = Base.metadata fuer Autogenerate.
 """
 
-import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy import engine_from_config, pool
 
 from kontura.core.config import settings
 from kontura.infra.db import Base
@@ -22,8 +21,22 @@ from kontura.infra.db import Base
 
 config = context.config
 
-# DB-URL zur Laufzeit aus settings setzen (statt aus alembic.ini)
-config.set_main_option("sqlalchemy.url", settings.database_url)
+
+def _sync_database_url(url: str) -> str:
+    """Konvertiert eine async-DB-URL zu einer sync-URL fuer Alembic.
+
+    asyncpg ist auf Windows + Docker Desktop instabil bei SCRAM-Auth.
+    Alembic nutzt deshalb den synchronen psycopg-Driver.
+    """
+    if url.startswith("postgresql+asyncpg://"):
+        return url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return url
+
+
+# DB-URL zur Laufzeit aus settings setzen (Sync-Variante)
+config.set_main_option("sqlalchemy.url", _sync_database_url(settings.database_url))
 
 # Logging-Konfiguration aus alembic.ini laden
 if config.config_file_name is not None:
@@ -52,35 +65,24 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def do_run_migrations(connection: Connection) -> None:
-    """Synchroner Migrations-Lauf innerhalb der Async-Connection."""
-    context.configure(
-        connection=connection,
-        target_metadata=target_metadata,
-        compare_type=True,  # erkennt Spalten-Typ-Aenderungen
-        compare_server_default=True,  # erkennt DEFAULT-Aenderungen
-    )
-
-    with context.begin_transaction():
-        context.run_migrations()
-
-
-async def run_async_migrations() -> None:
-    """Migrations mit aktiver Async-DB-Verbindung."""
-    connectable = async_engine_from_config(
+def run_migrations_online() -> None:
+    """Migrations mit aktiver DB-Verbindung (Standard-Modus, synchron)."""
+    connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
     )
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,  # erkennt Spalten-Typ-Aenderungen
+            compare_server_default=True,  # erkennt DEFAULT-Aenderungen
+        )
 
-    await connectable.dispose()
-
-
-def run_migrations_online() -> None:
-    """Default-Migrations-Modus (online, mit DB-Verbindung)."""
-    asyncio.run(run_async_migrations())
+        with context.begin_transaction():
+            context.run_migrations()
 
 
 if context.is_offline_mode():
