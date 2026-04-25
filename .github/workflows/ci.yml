@@ -1,0 +1,63 @@
+name: CI
+
+# Trigger: Bei Push auf main UND bei jedem Pull Request
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Verhindert parallele Laeufe fuer denselben Branch (spart Minuten)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, Type-Check & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # 1. Code auschecken
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. uv installieren (ultra-schnell)
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      # 3. Python 3.11 einrichten
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      # 4. Dependencies installieren (inkl. Dev-Dependencies)
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      # 5. Ruff: Lint-Check
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      # 6. Ruff: Format-Check (ohne Aenderungen)
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      # 7. Mypy: Static Type Checking
+      - name: Mypy type check
+        run: uv run mypy src/ tests/
+
+      # 8. Pytest: Alle Tests mit Coverage
+      - name: Pytest with coverage
+        run: uv run pytest -v --cov=src/kontura --cov-report=term-missing --cov-report=xml
+
+      # 9. Coverage-Report als Artefakt speichern
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 30
