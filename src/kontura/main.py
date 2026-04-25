@@ -1,12 +1,35 @@
-"""Kontura AI — FastAPI Application Entrypoint."""
+"""Kontura AI - FastAPI Application Entrypoint."""
+
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
 
 from kontura import __version__
 from kontura.core.config import settings
+from kontura.infra.db import dispose_engine
 
 logger = structlog.get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Lifespan-Hook: Startup- und Shutdown-Logik.
+
+    - Startup: Wird vor dem ersten Request ausgefuehrt
+    - Shutdown: Wird beim Beenden der App ausgefuehrt (z.B. SIGTERM)
+    """
+    logger.info(
+        "application_started",
+        app=settings.app_name,
+        version=__version__,
+        env=settings.app_env,
+    )
+    yield
+    logger.info("application_shutting_down")
+    await dispose_engine()
+    logger.info("application_stopped")
 
 
 def create_app() -> FastAPI:
@@ -14,12 +37,13 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version=__version__,
-        description="KI-gestützte Rechnungsverarbeitung und Auto-Buchung für SAP FI und DATEV.",
+        description="KI-gestuetzte Rechnungsverarbeitung und Auto-Buchung fuer SAP FI und DATEV.",
+        lifespan=lifespan,
     )
 
     @app.get("/health", tags=["System"])
     async def health() -> dict[str, str]:
-        """Health-Check-Endpoint für Monitoring und Load-Balancer."""
+        """Health-Check-Endpoint fuer Monitoring und Load-Balancer."""
         return {
             "status": "ok",
             "service": settings.app_name,
@@ -27,12 +51,6 @@ def create_app() -> FastAPI:
             "environment": settings.app_env,
         }
 
-    logger.info(
-        "application_started",
-        app=settings.app_name,
-        version=__version__,
-        env=settings.app_env,
-    )
     return app
 
 
