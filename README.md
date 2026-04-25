@@ -1,5 +1,8 @@
 # Kontura AI
 
+[![CI](https://github.com/fkipke/kontura-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/fkipke/kontura-ai/actions/workflows/ci.yml)
+
+
 > KI-gestützte Rechnungsverarbeitung und Auto-Buchung für SAP FI und DATEV.
 
 **Status:** In aktiver Entwicklung — MVP geplant für Q2 2026.
