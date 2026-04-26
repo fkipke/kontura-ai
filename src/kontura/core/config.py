@@ -31,7 +31,6 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
 
     # Datenbank
-    # Port 5433 default, da 5432 oft von anderen Postgres-Installationen belegt ist.
     database_url: str = Field(
         default="postgresql+asyncpg://kontura:dev_local_password@localhost:5433/kontura",
         description="Async-PostgreSQL-Connection-String (asyncpg-Treiber)",
@@ -41,6 +40,22 @@ class Settings(BaseSettings):
     redis_url: str = Field(
         default="redis://localhost:6379/0",
         description="Redis-Connection-String fuer Cache und Queues",
+    )
+
+    # ==========================================
+    # KI-Provider
+    # ==========================================
+    ai_provider: str = Field(default="openai", description="openai | azure | ollama")
+
+    # OpenAI (direkt)
+    openai_api_key: str = Field(default="", description="OpenAI API Key (leer im Test/CI)")
+    openai_embedding_model: str = Field(
+        default="text-embedding-3-small",
+        description="OpenAI Embedding-Modell (1536 Dim, billig, schnell)",
+    )
+    openai_chat_model: str = Field(
+        default="gpt-4o-mini",
+        description="OpenAI Chat-Modell (Dev: mini, Production spaeter: gpt-4o)",
     )
 
 
