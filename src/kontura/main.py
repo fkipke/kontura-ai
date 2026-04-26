@@ -7,6 +7,7 @@ import structlog
 from fastapi import FastAPI
 
 from kontura import __version__
+from kontura.api.invoices import router as invoices_router
 from kontura.core.config import settings
 from kontura.infra.db import dispose_engine
 
@@ -15,11 +16,7 @@ logger = structlog.get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Lifespan-Hook: Startup- und Shutdown-Logik.
-
-    - Startup: Wird vor dem ersten Request ausgefuehrt
-    - Shutdown: Wird beim Beenden der App ausgefuehrt (z.B. SIGTERM)
-    """
+    """Lifespan-Hook: Startup- und Shutdown-Logik."""
     logger.info(
         "application_started",
         app=settings.app_name,
@@ -50,6 +47,9 @@ def create_app() -> FastAPI:
             "version": __version__,
             "environment": settings.app_env,
         }
+
+    # Domain-Router registrieren
+    app.include_router(invoices_router)
 
     return app
 
