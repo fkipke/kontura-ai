@@ -18,6 +18,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    # Postgres als Service-Container fuer Integration-Tests
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: kontura
+          POSTGRES_USER: kontura
+          POSTGRES_PASSWORD: dev_local_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kontura -d kontura"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    # DB-URLs fuer alle Steps. Tests erwarten 5432 im CI (kein Konflikt wie lokal).
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://kontura:dev_local_password@localhost:5432/kontura
+      DATABASE_URL: postgresql+asyncpg://kontura:dev_local_password@localhost:5432/kontura
+
     steps:
       # 1. Code auschecken
       - name: Checkout repository
@@ -49,7 +70,7 @@ jobs:
       - name: Mypy type check
         run: uv run mypy src/ tests/
 
-      # 8. Pytest: Alle Tests mit Coverage
+      # 8. Pytest: Alle Tests mit Coverage (gegen echte Postgres-DB)
       - name: Pytest with coverage
         run: uv run pytest -v --cov=src/kontura --cov-report=term-missing --cov-report=xml
 
