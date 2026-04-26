@@ -13,6 +13,7 @@ from collections.abc import AsyncGenerator
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -40,6 +41,8 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
     """
     eng = create_async_engine(TEST_DATABASE_URL, echo=False, future=True, poolclass=None)
     async with eng.begin() as conn:
+        # pgvector-Extension aktivieren (idempotent)
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     try:
