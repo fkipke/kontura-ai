@@ -1,7 +1,7 @@
 """Pytest-Fixtures fuer Kontura AI.
 
 Senior-Setup:
-- Echte Postgres-DB (kein SQLite-Mock - wir wollen die Wahrheit testen).
+- Eigene Test-DB ('kontura_test'), damit Tests NIE Production-Daten zerstoeren.
 - Engine ist function-scoped: jeder Test bekommt einen frischen Event-Loop +
   eine frische Engine. Vermeidet asyncpg-"another operation in progress"-Errors.
 - Schema wird vor jedem Test angelegt und nach jedem Test wieder geloescht.
@@ -21,14 +21,16 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+import kontura.infra.models  # noqa: F401  # registriert ALLE Modelle bei Base.metadata
 from kontura.infra.db import Base, get_session
-from kontura.infra.models import Invoice  # noqa: F401  # registriert Modell bei Base.metadata
 from kontura.main import app
 
-# Test-DB-URL: nutzt TEST_DATABASE_URL falls gesetzt (CI), sonst lokale Dev-DB.
+# Test-DB-URL: nutzt TEST_DATABASE_URL falls gesetzt (CI), sonst eigene Test-DB
+# 'kontura_test'. So koennen Tests die DB risikolos droppen/recreaten,
+# ohne die lokale Dev-DB ('kontura') zu zerstoeren.
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://kontura:dev_local_password@localhost:5433/kontura",
+    "postgresql+asyncpg://kontura:dev_local_password@localhost:5433/kontura_test",
 )
 
 
