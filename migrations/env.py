@@ -12,9 +12,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+import kontura.infra.models  # noqa: F401  # registriert ALLE Modelle bei Base.metadata
 from kontura.core.config import settings
 from kontura.infra.db import Base
-from kontura.infra.models import Invoice  # noqa: F401  # registriert das Modell bei Base.metadata
 
 # Hier alle Modelle importieren, damit Alembic sie kennt (Autogenerate).
 # Wenn ein neues Modell dazukommt, in kontura.infra.models.__init__ exportieren
