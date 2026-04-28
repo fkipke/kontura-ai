@@ -48,6 +48,12 @@ select = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# Smoke-Tests rufen echte externe Services (OpenAI, Production-DB) auf.
+# Standardlauf ueberspringt sie - manueller Aufruf:  uv run pytest -m smoke -v
+addopts = "-m 'not smoke'"
+markers = [
+    "smoke: end-to-end smoke tests with real external services (OpenAI, Production-DB)",
+]
 
 [dependency-groups]
 dev = [
