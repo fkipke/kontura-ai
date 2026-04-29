@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 
 import kontura.infra.models  # noqa: F401  # registriert ALLE Modelle bei Base.metadata
 from kontura.infra.db import Base, get_session
@@ -38,10 +39,11 @@ TEST_DATABASE_URL = os.getenv(
 async def engine() -> AsyncGenerator[AsyncEngine, None]:
     """Erzeugt eine Test-Engine pro Test (Event-Loop-sicher).
 
-    Die NullPool-Strategie verhindert, dass Connections ueber Event-Loop-Grenzen
-    hinweg wiederverwendet werden - das ist der haeufigste asyncpg-Stolperstein.
+    H1-Fix: poolclass=NullPool (NICHT None!). NullPool oeffnet pro Anfrage
+    eine frische Connection und schliesst sie sofort wieder - so koennen keine
+    Connections ueber Event-Loop-Grenzen hinweg wiederverwendet werden.
     """
-    eng = create_async_engine(TEST_DATABASE_URL, echo=False, future=True, poolclass=None)
+    eng = create_async_engine(TEST_DATABASE_URL, echo=False, future=True, poolclass=NullPool)
     async with eng.begin() as conn:
         # pgvector-Extension aktivieren (idempotent)
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))

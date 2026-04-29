@@ -1,7 +1,7 @@
 """Smoke-Test fuer den Embedding-Layer (echter OpenAI-Call + Production-DB).
 
 Wird per Default UEBERSPRUNGEN. Aufruf manuell vor Releases:
-    uv run pytest -m smoke -v
+    uv run pytest -m smoke -v -s
 
 Was passiert:
 1. Eine Test-Rechnung mit absichtlicher IBAN im Vendor-Feld wird angelegt.
@@ -38,6 +38,7 @@ async def test_embedding_pipeline_end_to_end_with_real_openai() -> None:
     async with SessionFactory() as session:
         # 1) Invoice mit verschmutzten Daten anlegen (echte IBAN im Vendor!)
         inv = Invoice(
+            tenant_id=tenant.tenant_id,
             invoice_number=f"SMOKE-{dt.datetime.now(dt.UTC).strftime('%H%M%S')}",
             vendor_name="Telekom IBAN DE89370400440532013000 GmbH",
             invoice_date=dt.date(2026, 4, 28),
@@ -58,8 +59,7 @@ async def test_embedding_pipeline_end_to_end_with_real_openai() -> None:
         entry = await service.embed_invoice(tenant, inv)
         await session.commit()
         print(
-            f"[2/4] Embedding erzeugt: id={entry.id} "
-            f"dim={len(entry.embedding)} model={entry.model}"
+            f"[2/4] Embedding erzeugt: id={entry.id} dim={len(entry.embedding)} model={entry.model}"
         )
         print(f"      source_text in DB: {entry.source_text!r}")
 

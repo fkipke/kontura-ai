@@ -45,7 +45,6 @@ class _FakeAIProvider:
     async def embed(self, text: str) -> list[float]:
         self.last_embed_input = text
         self.embed_calls += 1
-        # Deterministischer Vektor aus Textlaenge - reicht fuer Tests
         return [float(len(text) % 100) * 0.01 for _ in range(EMBEDDING_DIM)]
 
     async def chat(
@@ -64,10 +63,12 @@ class _FakeAIProvider:
 async def _make_invoice(
     session: AsyncSession,
     *,
+    tenant: TenantContext,
     number: str = "INV-2026-001",
     vendor: str = "Telekom Deutschland GmbH",
 ) -> Invoice:
     inv = Invoice(
+        tenant_id=tenant.tenant_id,
         invoice_number=number,
         vendor_name=vendor,
         invoice_date=dt.date(2026, 4, 28),
@@ -98,6 +99,7 @@ def _make_service(
 
 def test_build_invoice_text_is_deterministic() -> None:
     inv = Invoice(
+        tenant_id="acme",
         invoice_number="INV-001",
         vendor_name="Acme GmbH",
         invoice_date=dt.date(2026, 1, 15),
@@ -112,6 +114,7 @@ def test_build_invoice_text_is_deterministic() -> None:
 
 def test_build_invoice_text_contains_all_relevant_fields() -> None:
     inv = Invoice(
+        tenant_id="acme",
         invoice_number="INV-2026-042",
         vendor_name="Acme GmbH",
         invoice_date=dt.date(2026, 1, 15),
@@ -127,6 +130,7 @@ def test_build_invoice_text_contains_all_relevant_fields() -> None:
     assert "EUR" in text
     assert "received" in text
 
+
 # ---------- embed_invoice() ----------
 
 
@@ -134,7 +138,7 @@ def test_build_invoice_text_contains_all_relevant_fields() -> None:
 async def test_embed_invoice_persists_entry(session: AsyncSession) -> None:
     service, fake = _make_service(session)
     tenant = TenantContext(tenant_id="acme")
-    inv = await _make_invoice(session)
+    inv = await _make_invoice(session, tenant=tenant)
 
     entry = await service.embed_invoice(tenant, inv)
 
@@ -153,13 +157,12 @@ async def test_embed_invoice_sends_masked_text_to_provider(session: AsyncSession
     tenant = TenantContext(tenant_id="acme")
     inv = await _make_invoice(
         session,
-        # Vendor enthaelt eine echte IBAN - das simuliert verschmutzte Realdaten
+        tenant=tenant,
         vendor="Telekom DE89370400440532013000 GmbH",
     )
 
     await service.embed_invoice(tenant, inv)
 
-    # Der Provider hat NUR den maskierten Text gesehen
     assert fake.last_embed_input is not None
     assert "DE89370400440532013000" not in fake.last_embed_input
     assert "[IBAN_1]" in fake.last_embed_input
@@ -172,7 +175,8 @@ async def test_embed_invoice_stores_masked_source_text(session: AsyncSession) ->
     tenant = TenantContext(tenant_id="acme")
     inv = await _make_invoice(
         session,
-        vendor="Acme buero@firma.de GmbH",  # Email als PII
+        tenant=tenant,
+        vendor="Acme buero@firma.de GmbH",
     )
 
     entry = await service.embed_invoice(tenant, inv)
@@ -184,15 +188,15 @@ async def test_embed_invoice_stores_masked_source_text(session: AsyncSession) ->
 @pytest.mark.asyncio
 async def test_embed_invoice_rejects_unpersisted_invoice() -> None:
     """Ohne ID gibts keinen FK -> klare Fehlermeldung statt DB-Fehler."""
-    repo = EmbeddingRepository(cast(AsyncSession, None))  # session wird nie genutzt
+    repo = EmbeddingRepository(cast(AsyncSession, None))
     service = EmbeddingService(
         provider=cast(AIProvider, _FakeAIProvider()),
         repository=repo,
         embedding_model="fake",
     )
     tenant = TenantContext(tenant_id="acme")
-    # ID weglassen -> nicht persistiert
     inv = Invoice(
+        tenant_id="acme",
         invoice_number="X",
         vendor_name="V",
         invoice_date=dt.date(2026, 1, 1),
@@ -211,13 +215,12 @@ async def test_embed_invoice_supports_find_similar_roundtrip(session: AsyncSessi
     service, _ = _make_service(session)
     tenant = TenantContext(tenant_id="acme")
 
-    inv1 = await _make_invoice(session, number="INV-001", vendor="Vodafone GmbH")
-    inv2 = await _make_invoice(session, number="INV-002", vendor="Telekom GmbH")
+    inv1 = await _make_invoice(session, tenant=tenant, number="INV-001", vendor="Vodafone GmbH")
+    inv2 = await _make_invoice(session, tenant=tenant, number="INV-002", vendor="Telekom GmbH")
 
     await service.embed_invoice(tenant, inv1)
     await service.embed_invoice(tenant, inv2)
 
-    # Query: finde aehnliche zur ersten Rechnung
     repo = EmbeddingRepository(session)
     query_text = EmbeddingService.build_invoice_text(inv1)
     query_vec = [float(len(query_text) % 100) * 0.01 for _ in range(EMBEDDING_DIM)]

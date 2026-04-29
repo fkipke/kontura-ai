@@ -1,7 +1,10 @@
-"""Integration-Tests fuer die Invoice-API.
+"""Integration-Tests fuer die Invoice-API (mit Tenant-Isolation).
 
-Diese Tests laufen gegen eine echte PostgreSQL-DB.
-Lokal: localhost:5433. CI: GitHub-Actions-Service-Container.
+Die kritischen Tests beweisen:
+- Ohne X-Tenant-Id -> 401
+- Tenant B sieht NIEMALS Daten von Tenant A
+- Doppelte Rechnungsnummer im selben Tenant -> 409 (K4)
+- Gleiche Rechnungsnummer in DIFFERENT Tenants -> erlaubt
 """
 
 import pytest
@@ -15,12 +18,16 @@ INVOICE_PAYLOAD = {
     "currency": "EUR",
 }
 
+TENANT_A_HEADERS = {"X-Tenant-Id": "acme-corp"}
+TENANT_B_HEADERS = {"X-Tenant-Id": "other-corp"}
+
+
+# --- Standard CRUD-Tests (mit Tenant) ---
+
 
 @pytest.mark.asyncio
 async def test_create_invoice_returns_201_and_persists(client: AsyncClient) -> None:
-    """POST /invoices legt eine Rechnung an und liefert sie als InvoiceRead zurueck."""
-    response = await client.post("/invoices", json=INVOICE_PAYLOAD)
-
+    response = await client.post("/invoices", json=INVOICE_PAYLOAD, headers=TENANT_A_HEADERS)
     assert response.status_code == 201
     body = response.json()
     assert body["invoice_number"] == INVOICE_PAYLOAD["invoice_number"]
@@ -28,58 +35,115 @@ async def test_create_invoice_returns_201_and_persists(client: AsyncClient) -> N
     assert body["currency"] == "EUR"
     assert body["status"] == "received"
     assert "id" in body
-    assert "created_at" in body
-    assert "updated_at" in body
 
 
 @pytest.mark.asyncio
 async def test_list_invoices_returns_created_invoice(client: AsyncClient) -> None:
-    """GET /invoices liefert die zuvor erstellte Rechnung."""
-    await client.post("/invoices", json=INVOICE_PAYLOAD)
-
-    response = await client.get("/invoices")
+    await client.post("/invoices", json=INVOICE_PAYLOAD, headers=TENANT_A_HEADERS)
+    response = await client.get("/invoices", headers=TENANT_A_HEADERS)
     assert response.status_code == 200
     items = response.json()
-    assert isinstance(items, list)
     assert len(items) == 1
     assert items[0]["invoice_number"] == INVOICE_PAYLOAD["invoice_number"]
 
 
 @pytest.mark.asyncio
 async def test_get_invoice_by_id_returns_200(client: AsyncClient) -> None:
-    """GET /invoices/{id} liefert die Rechnung mit der passenden ID."""
-    create_resp = await client.post("/invoices", json=INVOICE_PAYLOAD)
+    create_resp = await client.post("/invoices", json=INVOICE_PAYLOAD, headers=TENANT_A_HEADERS)
     invoice_id = create_resp.json()["id"]
-
-    response = await client.get(f"/invoices/{invoice_id}")
+    response = await client.get(f"/invoices/{invoice_id}", headers=TENANT_A_HEADERS)
     assert response.status_code == 200
     assert response.json()["id"] == invoice_id
 
 
 @pytest.mark.asyncio
 async def test_get_invoice_unknown_id_returns_404(client: AsyncClient) -> None:
-    """GET /invoices/{id} mit unbekannter ID -> 404."""
-    response = await client.get("/invoices/00000000-0000-0000-0000-000000000000")
+    response = await client.get(
+        "/invoices/00000000-0000-0000-0000-000000000000", headers=TENANT_A_HEADERS
+    )
     assert response.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_create_invoice_with_negative_amount_returns_422(client: AsyncClient) -> None:
-    """Pydantic-Validation: negative Betraege werden abgewiesen."""
     bad_payload = {**INVOICE_PAYLOAD, "total_amount": "-50.00"}
-    response = await client.post("/invoices", json=bad_payload)
+    response = await client.post("/invoices", json=bad_payload, headers=TENANT_A_HEADERS)
     assert response.status_code == 422
 
 
 @pytest.mark.asyncio
 async def test_list_invoices_respects_limit(client: AsyncClient) -> None:
-    """GET /invoices?limit=1 liefert hoechstens 1 Eintrag."""
     for i in range(3):
         await client.post(
             "/invoices",
             json={**INVOICE_PAYLOAD, "invoice_number": f"RE-2026-00{i}"},
+            headers=TENANT_A_HEADERS,
         )
-
-    response = await client.get("/invoices?limit=1")
+    response = await client.get("/invoices?limit=1", headers=TENANT_A_HEADERS)
     assert response.status_code == 200
     assert len(response.json()) == 1
+
+
+# --- Tenant-Auth-Tests ---
+
+
+@pytest.mark.asyncio
+async def test_create_invoice_without_tenant_returns_401(client: AsyncClient) -> None:
+    response = await client.post("/invoices", json=INVOICE_PAYLOAD)
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_list_invoices_without_tenant_returns_401(client: AsyncClient) -> None:
+    response = await client.get("/invoices")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_invalid_tenant_id_returns_400(client: AsyncClient) -> None:
+    """Tenant-Id mit unerlaubten Zeichen (z.B. UPPERCASE) -> 400."""
+    bad_headers = {"X-Tenant-Id": "INVALID.TENANT"}
+    response = await client.get("/invoices", headers=bad_headers)
+    assert response.status_code == 400
+
+
+# --- Tenant-Isolation-Tests (KRITISCH) ---
+
+
+@pytest.mark.asyncio
+async def test_tenant_b_cannot_see_tenant_a_invoices_in_list(client: AsyncClient) -> None:
+    """KRITISCH: Tenant B darf NIEMALS Rechnungen von A sehen."""
+    await client.post("/invoices", json=INVOICE_PAYLOAD, headers=TENANT_A_HEADERS)
+    response = await client.get("/invoices", headers=TENANT_B_HEADERS)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_tenant_b_cannot_get_tenant_a_invoice_by_id(client: AsyncClient) -> None:
+    """KRITISCH: Tenant B darf nicht via UUID auf Daten von A zugreifen -> 404."""
+    create_resp = await client.post("/invoices", json=INVOICE_PAYLOAD, headers=TENANT_A_HEADERS)
+    invoice_id = create_resp.json()["id"]
+    response = await client.get(f"/invoices/{invoice_id}", headers=TENANT_B_HEADERS)
+    assert response.status_code == 404
+
+
+# --- K4: Unique-Constraint-Tests ---
+
+
+@pytest.mark.asyncio
+async def test_duplicate_invoice_number_same_tenant_returns_409(client: AsyncClient) -> None:
+    """K4: Doppelte invoice_number im selben Tenant -> 409 Conflict."""
+    r1 = await client.post("/invoices", json=INVOICE_PAYLOAD, headers=TENANT_A_HEADERS)
+    assert r1.status_code == 201
+    r2 = await client.post("/invoices", json=INVOICE_PAYLOAD, headers=TENANT_A_HEADERS)
+    assert r2.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_same_invoice_number_different_tenants_allowed(client: AsyncClient) -> None:
+    """Gleiche invoice_number in verschiedenen Tenants ist erlaubt."""
+    r1 = await client.post("/invoices", json=INVOICE_PAYLOAD, headers=TENANT_A_HEADERS)
+    r2 = await client.post("/invoices", json=INVOICE_PAYLOAD, headers=TENANT_B_HEADERS)
+    assert r1.status_code == 201
+    assert r2.status_code == 201

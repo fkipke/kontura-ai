@@ -1,19 +1,19 @@
-"""HTTP-Endpoints fuer Eingangsrechnungen."""
+"""HTTP-Endpoints fuer Eingangsrechnungen (tenant-isoliert)."""
 
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kontura.api.dependencies import TenantDep
 from kontura.api.invoices.repository import InvoiceRepository
 from kontura.api.invoices.schemas import InvoiceCreate, InvoiceRead
 from kontura.infra.db import get_session
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
 
-# Type-Alias fuer DB-Session-Dependency.
-# Annotated[...] ist der moderne FastAPI-Standard (statt Default-Arg mit Depends()).
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
@@ -22,10 +22,31 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
     response_model=InvoiceRead,
     status_code=status.HTTP_201_CREATED,
     summary="Legt eine neue Eingangsrechnung an",
+    responses={
+        401: {"description": "X-Tenant-Id Header fehlt"},
+        409: {"description": "Rechnungsnummer existiert bereits fuer diesen Tenant"},
+    },
 )
-async def create_invoice(payload: InvoiceCreate, session: SessionDep) -> InvoiceRead:
+async def create_invoice(
+    payload: InvoiceCreate,
+    tenant: TenantDep,
+    session: SessionDep,
+) -> InvoiceRead:
     repo = InvoiceRepository(session)
-    invoice = await repo.create(payload)
+    try:
+        invoice = await repo.create(tenant, payload)
+        await session.commit()
+    except IntegrityError as exc:
+        # K4: composite UniqueConstraint (tenant_id, invoice_number) verletzt.
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Rechnungsnummer '{payload.invoice_number}' existiert bereits "
+                f"fuer Tenant '{tenant.tenant_id}'."
+            ),
+        ) from exc
+    await session.refresh(invoice)
     return InvoiceRead.model_validate(invoice)
 
 
@@ -35,12 +56,13 @@ async def create_invoice(payload: InvoiceCreate, session: SessionDep) -> Invoice
     summary="Listet Eingangsrechnungen (sortiert nach Anlage-Datum)",
 )
 async def list_invoices(
+    tenant: TenantDep,
     session: SessionDep,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[InvoiceRead]:
     repo = InvoiceRepository(session)
-    invoices = await repo.list_all(limit=limit, offset=offset)
+    invoices = await repo.list_all(tenant, limit=limit, offset=offset)
     return [InvoiceRead.model_validate(inv) for inv in invoices]
 
 
@@ -48,10 +70,15 @@ async def list_invoices(
     "/{invoice_id}",
     response_model=InvoiceRead,
     summary="Liefert eine einzelne Eingangsrechnung",
+    responses={404: {"description": "Rechnung nicht gefunden (im Tenant)"}},
 )
-async def get_invoice(invoice_id: uuid.UUID, session: SessionDep) -> InvoiceRead:
+async def get_invoice(
+    invoice_id: uuid.UUID,
+    tenant: TenantDep,
+    session: SessionDep,
+) -> InvoiceRead:
     repo = InvoiceRepository(session)
-    invoice = await repo.get_by_id(invoice_id)
+    invoice = await repo.get_by_id(tenant, invoice_id)
     if invoice is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -2,6 +2,11 @@
 
 Senior-Pattern: Wrappt einen beliebigen AIProvider und implementiert das gleiche
 Interface. Anwendungs-Code merkt nichts vom Audit-Layer.
+
+Defense-in-Depth (K1): Der WRAPPED Provider bekommt IMMER den maskierten Text.
+Damit ist es egal, wer 'AuditedAIProvider' aufruft - PII verlaesst diese Schicht
+NIEMALS unmaskiert. Die Maskierung im EmbeddingService ist eine zusaetzliche
+Verteidigungslinie, kein Single-Point-of-Failure.
 """
 
 from __future__ import annotations
@@ -22,8 +27,8 @@ class AuditedAIProvider:
     """Wrappt einen AIProvider und persistiert jeden Call als LLMAuditEntry.
 
     Effekte:
-    - Vor jedem Call: PII-Masking auf den Prompt (Schutz!).
-    - Nach Call: Eintrag mit Modell, Latenz, Erfolg/Fehler in DB.
+    - PII-Masking VOR jedem Provider-Call (Defense-in-Depth).
+    - Audit-Eintrag mit Modell, Latenz, Erfolg/Fehler in DB nach jedem Call.
     - Bei Fehler: Eintrag mit success=False, exception wird re-raised.
 
     Implementiert das AIProvider-Protocol strukturell (gleiche Signatur).
@@ -47,15 +52,21 @@ class AuditedAIProvider:
     def embedding_dimension(self) -> int:
         return self._wrapped.embedding_dimension
 
+    @property
+    def audit_repo(self) -> AuditRepository:
+        """Exponiert das Audit-Repository (z.B. fuer Lifespan-Shutdown)."""
+        return self._audit_repo
+
     async def embed(self, text: str) -> list[float]:
+        # K1-Fix: Provider bekommt den MASKIERTEN Text - kein PII-Leak nach extern.
         masked = self._masker.mask(text)
         start = time.perf_counter()
         success = True
         error_message: str | None = None
         response_chars = 0
         try:
-            vector = await self._wrapped.embed(text)
-            response_chars = len(vector)  # Anzahl Float-Werte als Proxy
+            vector = await self._wrapped.embed(masked.masked_text)
+            response_chars = len(vector)
             return vector
         except Exception as exc:
             success = False
@@ -81,11 +92,16 @@ class AuditedAIProvider:
         temperature: float = 0.0,
         max_tokens: int | None = None,
     ) -> str:
-        # PII-Masking auf jede Message vor dem Logging anwenden
-        masked_messages = [
-            {"role": m.role, "content": self._masker.mask(m.content).masked_text} for m in messages
+        # K1-Fix: Auch der Chat-Provider bekommt nur maskierte Messages.
+        masked_messages_for_provider: list[ChatMessage] = [
+            ChatMessage(role=m.role, content=self._masker.mask(m.content).masked_text)
+            for m in messages
         ]
-        prompt_serialized = json.dumps(masked_messages, ensure_ascii=False)
+        # Fuer das Audit-Log serialisieren wir die maskierten Messages.
+        prompt_serialized = json.dumps(
+            [{"role": m.role, "content": m.content} for m in masked_messages_for_provider],
+            ensure_ascii=False,
+        )
 
         start = time.perf_counter()
         success = True
@@ -93,7 +109,9 @@ class AuditedAIProvider:
         result = ""
         try:
             result = await self._wrapped.chat(
-                messages, temperature=temperature, max_tokens=max_tokens
+                masked_messages_for_provider,
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
             return result
         except Exception as exc:

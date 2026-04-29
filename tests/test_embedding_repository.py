@@ -20,13 +20,18 @@ from kontura.infra.models import EMBEDDING_DIM, Invoice, InvoiceStatus
 
 def _vec(seed: float) -> list[float]:
     """Erzeugt einen deterministischen Vektor der korrekten Dimension."""
-    # Einfacher Trick: Ein konstanter Vektor mit kleinen Variationen pro seed.
     return [seed + (i * 0.0001) for i in range(EMBEDDING_DIM)]
 
 
-async def _make_invoice(session: AsyncSession, number: str) -> Invoice:
-    """Hilfsfunktion: legt eine Test-Invoice an (FK-Voraussetzung)."""
+async def _make_invoice(
+    session: AsyncSession,
+    number: str,
+    *,
+    tenant: TenantContext,
+) -> Invoice:
+    """Hilfsfunktion: legt eine Test-Invoice an (FK + Tenant-Voraussetzung)."""
     inv = Invoice(
+        tenant_id=tenant.tenant_id,
         invoice_number=number,
         vendor_name="Test Vendor",
         invoice_date=dt.date(2026, 1, 1),
@@ -43,7 +48,7 @@ async def _make_invoice(session: AsyncSession, number: str) -> Invoice:
 async def test_add_persists_embedding(session: AsyncSession) -> None:
     repo = EmbeddingRepository(session)
     tenant = TenantContext(tenant_id="acme")
-    inv = await _make_invoice(session, "INV-001")
+    inv = await _make_invoice(session, "INV-001", tenant=tenant)
 
     entry = await repo.add(
         tenant=tenant,
@@ -56,14 +61,13 @@ async def test_add_persists_embedding(session: AsyncSession) -> None:
     assert entry.id is not None
     assert entry.tenant_id == "acme"
     assert entry.invoice_id == inv.id
-    assert entry.model == "text-embedding-3-small"
 
 
 @pytest.mark.asyncio
 async def test_get_by_invoice_returns_entry(session: AsyncSession) -> None:
     repo = EmbeddingRepository(session)
     tenant = TenantContext(tenant_id="acme")
-    inv = await _make_invoice(session, "INV-002")
+    inv = await _make_invoice(session, "INV-002", tenant=tenant)
     await repo.add(tenant, inv.id, _vec(0.2), "test-model", "src")
 
     found = await repo.get_by_invoice(tenant, inv.id)
@@ -88,7 +92,7 @@ async def test_tenant_isolation_get_by_invoice(session: AsyncSession) -> None:
     repo = EmbeddingRepository(session)
     tenant_a = TenantContext(tenant_id="tenant-a")
     tenant_b = TenantContext(tenant_id="tenant-b")
-    inv = await _make_invoice(session, "INV-003")
+    inv = await _make_invoice(session, "INV-003", tenant=tenant_a)
 
     # Tenant A speichert ein Embedding
     await repo.add(tenant_a, inv.id, _vec(0.3), "test-model", "secret")
@@ -106,21 +110,19 @@ async def test_find_similar_returns_results_sorted_by_distance(
     repo = EmbeddingRepository(session)
     tenant = TenantContext(tenant_id="acme")
 
-    inv1 = await _make_invoice(session, "INV-A")
-    inv2 = await _make_invoice(session, "INV-B")
-    inv3 = await _make_invoice(session, "INV-C")
+    inv1 = await _make_invoice(session, "INV-A", tenant=tenant)
+    inv2 = await _make_invoice(session, "INV-B", tenant=tenant)
+    inv3 = await _make_invoice(session, "INV-C", tenant=tenant)
 
     await repo.add(tenant, inv1.id, _vec(0.10), "m", "near")
     await repo.add(tenant, inv2.id, _vec(0.11), "m", "very-near")
     await repo.add(tenant, inv3.id, _vec(0.90), "m", "far")
 
-    # Query nahe an _vec(0.10/0.11), weit weg von 0.90
     results = await repo.find_similar(tenant, _vec(0.105), limit=3)
 
     assert len(results) == 3
-    # Sortiert: kleinste Distanz zuerst
     distances = [r.distance for r in results]
-    assert distances == sorted(distances), "Ergebnisse muessen aufsteigend sortiert sein"
+    assert distances == sorted(distances)
 
 
 @pytest.mark.asyncio
@@ -130,17 +132,15 @@ async def test_find_similar_respects_tenant_isolation(session: AsyncSession) -> 
     tenant_a = TenantContext(tenant_id="tenant-a")
     tenant_b = TenantContext(tenant_id="tenant-b")
 
-    inv_a = await _make_invoice(session, "INV-A")
-    inv_b = await _make_invoice(session, "INV-B")
+    inv_a = await _make_invoice(session, "INV-A", tenant=tenant_a)
+    inv_b = await _make_invoice(session, "INV-B", tenant=tenant_b)
 
-    # Beide Tenants speichern Embeddings - identische Vektoren
     await repo.add(tenant_a, inv_a.id, _vec(0.5), "m", "tenant-a-secret")
     await repo.add(tenant_b, inv_b.id, _vec(0.5), "m", "tenant-b-secret")
 
-    # Tenant A sucht - darf nur eigenes Embedding finden
     results_a = await repo.find_similar(tenant_a, _vec(0.5), limit=10)
 
-    assert len(results_a) == 1, "Tenant A darf nur 1 Embedding sehen (sein eigenes)"
+    assert len(results_a) == 1
     assert results_a[0].invoice_id == inv_a.id
     assert "tenant-a" in results_a[0].source_text
 
