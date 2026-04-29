@@ -7,6 +7,10 @@ Defense-in-Depth (K1): Der WRAPPED Provider bekommt IMMER den maskierten Text.
 Damit ist es egal, wer 'AuditedAIProvider' aufruft - PII verlaesst diese Schicht
 NIEMALS unmaskiert. Die Maskierung im EmbeddingService ist eine zusaetzliche
 Verteidigungslinie, kein Single-Point-of-Failure.
+
+Tenant-Propagation: Der aktive Tenant wird per ContextVar gelesen
+(siehe core.tenant.current_tenant_var). Damit muss kein einziger Aufrufer
+seinen Tenant durch die Provider-Signatur durchschleifen.
 """
 
 from __future__ import annotations
@@ -18,21 +22,14 @@ import time
 from kontura.ai.audit.repository import AuditRepository
 from kontura.ai.base import AIProvider, ChatMessage
 from kontura.ai.pii import PIIMasker, RegexMasker
+from kontura.core.tenant import get_current_tenant
 from kontura.infra.models import LLMAuditEntry
 
 logger = logging.getLogger(__name__)
 
 
 class AuditedAIProvider:
-    """Wrappt einen AIProvider und persistiert jeden Call als LLMAuditEntry.
-
-    Effekte:
-    - PII-Masking VOR jedem Provider-Call (Defense-in-Depth).
-    - Audit-Eintrag mit Modell, Latenz, Erfolg/Fehler in DB nach jedem Call.
-    - Bei Fehler: Eintrag mit success=False, exception wird re-raised.
-
-    Implementiert das AIProvider-Protocol strukturell (gleiche Signatur).
-    """
+    """Wrappt einen AIProvider und persistiert jeden Call als LLMAuditEntry."""
 
     def __init__(
         self,
@@ -58,7 +55,6 @@ class AuditedAIProvider:
         return self._audit_repo
 
     async def embed(self, text: str) -> list[float]:
-        # K1-Fix: Provider bekommt den MASKIERTEN Text - kein PII-Leak nach extern.
         masked = self._masker.mask(text)
         start = time.perf_counter()
         success = True
@@ -92,12 +88,10 @@ class AuditedAIProvider:
         temperature: float = 0.0,
         max_tokens: int | None = None,
     ) -> str:
-        # K1-Fix: Auch der Chat-Provider bekommt nur maskierte Messages.
         masked_messages_for_provider: list[ChatMessage] = [
             ChatMessage(role=m.role, content=self._masker.mask(m.content).masked_text)
             for m in messages
         ]
-        # Fuer das Audit-Log serialisieren wir die maskierten Messages.
         prompt_serialized = json.dumps(
             [{"role": m.role, "content": m.content} for m in masked_messages_for_provider],
             ensure_ascii=False,
@@ -145,7 +139,12 @@ class AuditedAIProvider:
         success: bool,
         error_message: str | None,
     ) -> None:
+        # Tenant aus dem ContextVar lesen (gesetzt vom get_tenant-Dependency).
+        # Default = SYSTEM_TENANT, falls ausserhalb eines HTTP-Requests gerufen.
+        tenant = get_current_tenant()
+
         entry = LLMAuditEntry(
+            tenant_id=tenant.tenant_id,
             provider_name=self._wrapped.name,
             operation=operation,
             model=model,
@@ -159,7 +158,6 @@ class AuditedAIProvider:
         await self._audit_repo.save(entry)
 
     def _embedding_model_name(self) -> str:
-        # Best-effort: Provider-Implementations haben oft _embedding_model.
         return getattr(self._wrapped, "_embedding_model", "unknown")
 
     def _chat_model_name(self) -> str:

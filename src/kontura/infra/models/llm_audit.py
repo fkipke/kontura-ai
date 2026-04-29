@@ -5,8 +5,10 @@ Zweck:
 - Cost-Tracking (Aufrufe pro Modell pro Tag)
 - Debugging (Reproduktion von KI-Antworten in Production)
 
-Wichtig: prompt_text wird IMMER nach PII-Masking gespeichert.
-Original-PII darf hier NIE landen.
+Wichtig:
+- prompt_text wird IMMER nach PII-Masking gespeichert. Original-PII darf hier NIE landen.
+- tenant_id stammt aus dem Request-ContextVar (siehe core.tenant.current_tenant_var).
+  Calls ohne Request-Kontext (Cron, Smoke-Tests) bekommen tenant_id='system'.
 """
 
 from sqlalchemy import Boolean, Integer, String, Text
@@ -17,9 +19,13 @@ from kontura.infra.models._mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class LLMAuditEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Ein einzelner LLM-Aufruf (embed oder chat)."""
+    """Ein einzelner LLM-Aufruf (embed oder chat) - tenant-isoliert."""
 
     __tablename__ = "llm_audit_entries"
+
+    # Tenant-Isolation: identifiziert den Mandanten, in dessen Request-Kontext
+    # der Call ausgeloest wurde. 'system' fuer Calls ausserhalb von Requests.
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
 
     # Welcher Provider wurde gerufen? (openai, azure, ollama, ...)
     provider_name: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
@@ -46,7 +52,7 @@ class LLMAuditEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return (
-            f"<LLMAuditEntry id={self.id} provider={self.provider_name} "
-            f"op={self.operation} model={self.model} success={self.success} "
-            f"duration_ms={self.duration_ms}>"
+            f"<LLMAuditEntry id={self.id} tenant={self.tenant_id} "
+            f"provider={self.provider_name} op={self.operation} "
+            f"success={self.success} duration_ms={self.duration_ms}>"
         )

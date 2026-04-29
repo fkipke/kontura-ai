@@ -1,42 +1,83 @@
 """Shared FastAPI-Dependencies fuer alle API-Versionen.
 
-Zentral gehaltene Dependencies, die sowohl von '/invoices' (v0-style) als
-auch von '/api/v1/...' verwendet werden. So gibt es nur EINE Stelle fuer
-die Tenant-Resolution - egal welche API-Version aufgerufen wird.
+Senior-Konzept: Tenant-Resolution aus JWT (nicht mehr aus Header)
+=================================================================
+Nach Phase E ist der einzige offizielle Weg, sich zu authentifizieren:
+    Authorization: Bearer <JWT>
+
+Aus dem JWT lesen wir tenant_id + user_id und setzen den ContextVar.
+Damit kennt jede Cross-cutting Component (AuditedAIProvider, Logger) den
+Tenant - ohne dass jeder Endpoint ihn als Parameter durchschleifen muss.
+
+Senior-Detail: Try/Finally + ContextVar.reset()
+================================================
+Generator-Dependency garantiert sauberen ContextVar-Reset am Request-Ende.
+Ohne Reset wuerde der Tenant in den naechsten Request 'lecken', der dieselbe
+Worker-Coroutine nutzt - klassischer Multi-Tenant-Bug.
 """
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, status
-from pydantic import ValidationError
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from kontura.core.tenant import TenantContext
+from kontura.core.jwt import TokenError, TokenPayload, decode_token
+from kontura.core.tenant import TenantContext, current_tenant_var
+
+# HTTPBearer macht aus 'Authorization: Bearer ...' automatisch ein Credentials-Object.
+# auto_error=False, damit WIR die Fehlermeldung kontrollieren (klare 401-Texte).
+_bearer = HTTPBearer(auto_error=False, description="JWT aus /auth/login")
 
 
-def get_tenant(
-    x_tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
-) -> TenantContext:
-    """Extrahiert den Tenant aus dem 'X-Tenant-Id'-Header.
+def get_token_payload(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+) -> TokenPayload:
+    """Validiert den JWT und liefert das Payload.
 
-    - Header fehlt -> 401 Unauthorized
-    - Format ungueltig -> 400 Bad Request
-    - Spaeter (Phase E): Auswertung des JWT-Claims statt Header.
-      Aenderung NUR hier - kein Endpoint muss angefasst werden.
+    - Header fehlt -> 401
+    - Token abgelaufen / ungueltig / gefaelscht -> 401
     """
-    if not x_tenant_id:
+    if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Header 'X-Tenant-Id' wird benoetigt.",
+            detail="Authorization-Header fehlt. Bitte 'Bearer <jwt>' senden.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     try:
-        return TenantContext(tenant_id=x_tenant_id)
-    except ValidationError as exc:
+        return decode_token(credentials.credentials)
+    except TokenError as exc:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ungueltige tenant_id: {exc.errors()[0]['msg']}",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+            headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
 
+async def get_tenant(
+    payload: Annotated[TokenPayload, Depends(get_token_payload)],
+) -> AsyncGenerator[TenantContext, None]:
+    """Extrahiert den Tenant aus dem JWT und setzt ihn als ContextVar.
+
+    Generator-Dependency: try/finally garantiert sauberen Reset.
+    """
+    try:
+        tenant = TenantContext(tenant_id=payload.tenant_id)
+    except ValueError as exc:
+        # Kann passieren, wenn ein altes Token einen ungueltigen tenant_id-Format hat.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token enthaelt ungueltige tenant_id: {exc}",
+        ) from exc
+
+    token = current_tenant_var.set(tenant)
+    try:
+        yield tenant
+    finally:
+        current_tenant_var.reset(token)
+
+
 TenantDep = Annotated[TenantContext, Depends(get_tenant)]
+TokenDep = Annotated[TokenPayload, Depends(get_token_payload)]

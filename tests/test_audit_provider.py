@@ -1,6 +1,10 @@
 """Tests fuer den AuditedAIProvider.
 
 Wir mocken sowohl den wrapped Provider als auch das AuditRepository.
+
+Ergaenzte Tests (Etappe 3):
+- ContextVar-Tenant landet im LLMAuditEntry.tenant_id
+- Default = SYSTEM_TENANT, wenn kein Request-Kontext gesetzt ist
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -9,6 +13,7 @@ import pytest
 
 from kontura.ai.audit.audited_provider import AuditedAIProvider
 from kontura.ai.base import AIProvider, ChatMessage
+from kontura.core.tenant import TenantContext, current_tenant_var
 
 
 def _make_wrapped_provider() -> MagicMock:
@@ -122,3 +127,40 @@ async def test_chat_records_failure_and_reraises() -> None:
     entry = audit_repo.save.await_args.args[0]
     assert entry.success is False
     assert "rate limit" in (entry.error_message or "")
+
+
+# ---------- ContextVar-Tenant-Propagation (Etappe 3) ----------
+
+
+@pytest.mark.asyncio
+async def test_audit_entry_picks_up_tenant_from_context_var() -> None:
+    """KRITISCH: Tenant aus dem ContextVar landet automatisch in LLMAuditEntry.tenant_id."""
+    wrapped = _make_wrapped_provider()
+    audit_repo = MagicMock()
+    audit_repo.save = AsyncMock()
+    audited = AuditedAIProvider(wrapped=wrapped, audit_repo=audit_repo)
+
+    tenant = TenantContext(tenant_id="acme-corp")
+    token = current_tenant_var.set(tenant)
+    try:
+        await audited.embed("hello")
+    finally:
+        current_tenant_var.reset(token)
+
+    entry = audit_repo.save.await_args.args[0]
+    assert entry.tenant_id == "acme-corp"
+
+
+@pytest.mark.asyncio
+async def test_audit_entry_defaults_to_system_tenant_outside_request() -> None:
+    """Calls ohne Request-Kontext (Smoke, Cron) werden mit tenant_id='system' geloggt."""
+    wrapped = _make_wrapped_provider()
+    audit_repo = MagicMock()
+    audit_repo.save = AsyncMock()
+    audited = AuditedAIProvider(wrapped=wrapped, audit_repo=audit_repo)
+
+    # KEIN current_tenant_var.set(...) -> Default = SYSTEM_TENANT
+    await audited.embed("hello from cron")
+
+    entry = audit_repo.save.await_args.args[0]
+    assert entry.tenant_id == "system"

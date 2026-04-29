@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from kontura import __version__
 from kontura.ai.audit.audited_provider import AuditedAIProvider
 from kontura.ai.factory import get_ai_provider
+from kontura.api.auth import router as auth_router
 from kontura.api.invoices import router as invoices_router
 from kontura.api.v1 import api_v1_router
 from kontura.core.config import settings
@@ -53,12 +54,12 @@ def create_app() -> FastAPI:
         """Health-Check-Endpoint fuer Monitoring und Load-Balancer."""
         return {
             "status": "ok",
-            "service": settings.app_name,
             "version": __version__,
             "environment": settings.app_env,
         }
 
     # Domain-Router registrieren
+    app.include_router(auth_router)
     app.include_router(invoices_router)
     app.include_router(api_v1_router)
 

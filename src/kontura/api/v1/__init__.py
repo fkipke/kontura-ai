@@ -11,9 +11,11 @@ Versioning-Strategie:
 
 from fastapi import APIRouter
 
+from kontura.api.v1.audit import router as audit_router
 from kontura.api.v1.embeddings import router as embeddings_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(embeddings_router)
+api_v1_router.include_router(audit_router)
 
 __all__ = ["api_v1_router"]

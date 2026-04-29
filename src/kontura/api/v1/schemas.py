@@ -47,6 +47,35 @@ class SimilarInvoicesResponse(BaseModel):
     count: int = Field(description="Anzahl Treffer")
 
 
+class AuditEntryResponse(BaseModel):
+    """Ein einzelner LLM-Audit-Eintrag fuer Compliance-Reports.
+
+    Hinweis: enthaelt KEINE PII (prompt_text ist bereits maskiert in der DB).
+    Damit ist dieser Endpoint DSGVO-konform - kein zusaetzliches Masking noetig.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID = Field(description="ID des Audit-Eintrags")
+    provider_name: str = Field(description="AI-Provider (openai, azure, ...)")
+    operation: str = Field(description="embed | chat")
+    model: str = Field(description="Verwendetes Modell (z.B. text-embedding-3-small)")
+    prompt_text: str = Field(description="Maskierter Prompt-Text (KEINE PII)")
+    prompt_chars: int = Field(description="Anzahl Zeichen im Prompt (Cost-Proxy)")
+    response_chars: int = Field(description="Anzahl Zeichen in der Antwort")
+    duration_ms: int = Field(description="Latenz des Calls in Millisekunden")
+    success: bool = Field(description="True wenn Call erfolgreich war")
+    error_message: str | None = Field(default=None, description="Fehlermeldung bei success=False")
+    created_at: datetime = Field(description="Zeitpunkt des Calls (UTC)")
+
+
+class AuditEntriesResponse(BaseModel):
+    """Antwort fuer das Listing der Audit-Eintraege."""
+
+    results: list[AuditEntryResponse]
+    count: int = Field(description="Anzahl zurueckgelieferter Eintraege")
+
+
 class ErrorResponse(BaseModel):
     """Standardisierte Fehlerantwort."""
 

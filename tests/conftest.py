@@ -6,6 +6,7 @@ Senior-Setup:
   eine frische Engine. Vermeidet asyncpg-"another operation in progress"-Errors.
 - Schema wird vor jedem Test angelegt und nach jedem Test wieder geloescht.
 - Dependency-Override leitet die App-Session auf die Test-Session um.
+- auth_headers(): Helper fuer Tests, die einen JWT brauchen.
 """
 
 import os
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 import kontura.infra.models  # noqa: F401  # registriert ALLE Modelle bei Base.metadata
+from kontura.core.jwt import encode_token
 from kontura.infra.db import Base, get_session
 from kontura.main import app
 
@@ -45,7 +47,6 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
     """
     eng = create_async_engine(TEST_DATABASE_URL, echo=False, future=True, poolclass=NullPool)
     async with eng.begin() as conn:
-        # pgvector-Extension aktivieren (idempotent)
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
@@ -77,3 +78,12 @@ async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
+
+
+def auth_headers(tenant_id: str = "acme-corp", *, user_id: str = "test-user-id") -> dict[str, str]:
+    """Erzeugt einen Authorization-Header mit gueltigem JWT.
+
+    Tests, die einen Tenant brauchen, nutzen das hier statt 'X-Tenant-Id'.
+    """
+    token = encode_token(sub=user_id, tenant_id=tenant_id, email="test@example.com")
+    return {"Authorization": f"Bearer {token}"}

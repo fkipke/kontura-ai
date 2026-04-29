@@ -1,6 +1,6 @@
 """TenantContext: Repraesentiert den aktuellen Mandanten in einer Request.
 
-Senior-Konzept: Tenant als typisiertes Objekt, nicht als String
+Senior-Konzept 1: Tenant als typisiertes Objekt, nicht als String
 ================================================================
 Statt 'tenant_id: str' ueberall durchzureichen, kapseln wir den Tenant in
 einem Pydantic-Model. Vorteile:
@@ -12,26 +12,43 @@ einem Pydantic-Model. Vorteile:
    features, locale) ohne hunderte Signaturen anzufassen.
 4. **Schwer zu faelschen:** Ein 'TenantContext' kann nur ueber den offiziellen
    Konstruktor entstehen - ein vergessener Filter ist sofort sichtbar.
+
+Senior-Konzept 2: ContextVar fuer ambient Tenant-Propagation
+============================================================
+Cross-cutting Components (Logging, Audit, Metrics) brauchen den Tenant,
+ohne dass jede Funktion ihn als Parameter durchschleift. Loesung: ContextVar -
+Pythons Async-aware Thread-Local. Jeder Request-Task hat seinen eigenen Wert,
+ohne sich mit anderen Tasks zu mischen.
+
+Verwendung:
+    # Im Dependency / Middleware:
+    token = current_tenant_var.set(tenant)
+    try:
+        ...do work...
+    finally:
+        current_tenant_var.reset(token)  # wichtig: Token zuruecksetzen!
+
+    # Wo immer der Tenant gebraucht wird (z.B. AuditedAIProvider):
+    tenant = current_tenant_var.get()  # liefert den aktuellen Tenant
+
+Default = SYSTEM_TENANT, damit Code ausserhalb von Requests (Cron, CLI,
+Smoke-Tests) trotzdem laeuft.
 """
 
 from __future__ import annotations
 
 import re
+from contextvars import ContextVar
 from typing import Final
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Tenant-IDs duerfen nur a-z, 0-9, '-' und '_' enthalten (URL-safe).
-# Keine Punkte/Slashes -> kein Risiko fuer Path-Traversal in spaeterem Storage.
 _TENANT_ID_PATTERN: Final = re.compile(r"^[a-z0-9_-]{2,64}$")
 
 
 class TenantContext(BaseModel):
-    """Identifiziert den aktuellen Mandanten.
-
-    Wird via FastAPI-Dependency aus dem Request gezogen (z.B. JWT-Claim oder
-    Header) und an Services/Repositories weitergegeben.
-    """
+    """Identifiziert den aktuellen Mandanten."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -51,5 +68,24 @@ class TenantContext(BaseModel):
             )
         return v
 
-    def __str__(self) -> str:  # praktisch fuers Logging
+    def __str__(self) -> str:
         return self.tenant_id
+
+
+# Sentinel-Tenant fuer Calls ohne Request-Kontext (Cron-Jobs, Smoke-Tests, CLI).
+# Wird NIEMALS aus dem User-Code per Parameter angelegt - existiert nur als Default.
+SYSTEM_TENANT: Final[TenantContext] = TenantContext(tenant_id="system")
+
+
+# ContextVar fuer ambient Tenant-Propagation (siehe Modul-Docstring).
+# Default = SYSTEM_TENANT, damit Background-Tasks lauffaehig sind.
+current_tenant_var: ContextVar[TenantContext] = ContextVar("current_tenant", default=SYSTEM_TENANT)
+
+
+def get_current_tenant() -> TenantContext:
+    """Liefert den aktuellen Tenant aus dem ContextVar.
+
+    Gibt SYSTEM_TENANT zurueck, wenn kein Tenant gesetzt ist (z.B. ausserhalb
+    eines HTTP-Requests). Damit laufen Background-Jobs ohne explizites Setup.
+    """
+    return current_tenant_var.get()

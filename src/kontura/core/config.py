@@ -58,5 +58,23 @@ class Settings(BaseSettings):
         description="OpenAI Chat-Modell (Dev: mini, Production spaeter: gpt-4o)",
     )
 
+    # ==========================================
+    # JWT / Auth
+    # ==========================================
+    # WICHTIG: jwt_secret MUSS in Production aus ENV kommen, NICHT der Default!
+    # Generierung: python -c "import secrets; print(secrets.token_urlsafe(48))"
+    # In Production: mindestens 32 Bytes (256 Bit) Entropie.
+    jwt_secret: str = Field(
+        default="dev-only-change-me-in-production-via-env-variable-please",
+        description="HS256-Secret fuer JWT-Signing. In Prod aus ENV setzen!",
+        min_length=32,
+    )
+    jwt_algorithm: str = Field(default="HS256", description="JWT-Signaturalgorithmus")
+    jwt_ttl_minutes: int = Field(
+        default=60 * 24,
+        ge=1,
+        description="Token-Gueltigkeit in Minuten (Default: 24h)",
+    )
+
 
 settings = Settings()

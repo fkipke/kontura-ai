@@ -1,7 +1,7 @@
-"""Integration-Tests fuer die Invoice-API (mit Tenant-Isolation).
+"""Integration-Tests fuer die Invoice-API (mit JWT-Tenant-Isolation).
 
 Die kritischen Tests beweisen:
-- Ohne X-Tenant-Id -> 401
+- Ohne JWT -> 401
 - Tenant B sieht NIEMALS Daten von Tenant A
 - Doppelte Rechnungsnummer im selben Tenant -> 409 (K4)
 - Gleiche Rechnungsnummer in DIFFERENT Tenants -> erlaubt
@@ -9,6 +9,8 @@ Die kritischen Tests beweisen:
 
 import pytest
 from httpx import AsyncClient
+
+from tests.conftest import auth_headers
 
 INVOICE_PAYLOAD = {
     "invoice_number": "RE-2026-001",
@@ -18,8 +20,8 @@ INVOICE_PAYLOAD = {
     "currency": "EUR",
 }
 
-TENANT_A_HEADERS = {"X-Tenant-Id": "acme-corp"}
-TENANT_B_HEADERS = {"X-Tenant-Id": "other-corp"}
+TENANT_A_HEADERS = auth_headers("acme-corp")
+TENANT_B_HEADERS = auth_headers("other-corp")
 
 
 # --- Standard CRUD-Tests (mit Tenant) ---
@@ -84,27 +86,25 @@ async def test_list_invoices_respects_limit(client: AsyncClient) -> None:
     assert len(response.json()) == 1
 
 
-# --- Tenant-Auth-Tests ---
+# --- Auth-Tests (kein JWT / falsches JWT) ---
 
 
 @pytest.mark.asyncio
-async def test_create_invoice_without_tenant_returns_401(client: AsyncClient) -> None:
+async def test_create_invoice_without_jwt_returns_401(client: AsyncClient) -> None:
     response = await client.post("/invoices", json=INVOICE_PAYLOAD)
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_list_invoices_without_tenant_returns_401(client: AsyncClient) -> None:
+async def test_list_invoices_without_jwt_returns_401(client: AsyncClient) -> None:
     response = await client.get("/invoices")
     assert response.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_invalid_tenant_id_returns_400(client: AsyncClient) -> None:
-    """Tenant-Id mit unerlaubten Zeichen (z.B. UPPERCASE) -> 400."""
-    bad_headers = {"X-Tenant-Id": "INVALID.TENANT"}
-    response = await client.get("/invoices", headers=bad_headers)
-    assert response.status_code == 400
+async def test_invalid_jwt_returns_401(client: AsyncClient) -> None:
+    response = await client.get("/invoices", headers={"Authorization": "Bearer not-a-real-jwt"})
+    assert response.status_code == 401
 
 
 # --- Tenant-Isolation-Tests (KRITISCH) ---
