@@ -82,9 +82,7 @@ async def login(payload: LoginRequest, session: SessionDep) -> TokenResponse:
     try:
         user = await service.login(payload)
     except AuthError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     return _build_token_response(
         user_id=str(user.id),
