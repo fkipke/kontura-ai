@@ -1,84 +1,139 @@
+# Continuous Integration - laeuft bei jedem Push + jedem PR auf main.
+#
+# Senior-Pattern: 3 parallele Jobs (lint / typecheck / test)
+# ===========================================================
+# - Schnelles Feedback: ruff (~30s) blockiert Devs nicht, wenn nur typecheck rot ist.
+# - Test-Job nutzt echtes Postgres+pgvector (Service-Container), kein Mock.
+# - uv-Cache via official action - spart ~2min pro Run.
+#
+# Senior-Detail: concurrency-Group
+# =================================
+# Wenn jemand 3 Commits hintereinander pusht, canceln wir alte Runs -
+# sonst stehen 3 Pipelines in der Queue und blockieren sich gegenseitig.
+
 name: CI
 
-# Trigger: Bei Push auf main UND bei jedem Pull Request
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
-# Verhindert parallele Laeufe fuer denselben Branch (spart Minuten)
+# Doppelte Runs vermeiden + alte Runs bei neuen Pushes canceln
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  quality:
-    name: Lint, Type-Check & Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+# Default: nur lesen. Einzelne Jobs koennen mehr Permissions anfordern.
+permissions:
+  contents: read
 
-    # Postgres als Service-Container fuer Integration-Tests
+env:
+  PYTHON_VERSION: "3.11"
+  UV_VERSION: "0.5.11"
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+  typecheck:
+    name: Type Check (mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Mypy
+        run: uv run mypy src/ tests/
+
+  test:
+    name: Tests (pytest + Postgres)
+    runs-on: ubuntu-latest
+
+    # Service-Container: Postgres mit pgvector als Sidecar.
+    # pgvector/pgvector:pg16 ist das offizielle Image mit pgvector preinstalled.
     services:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_DB: kontura
           POSTGRES_USER: kontura
           POSTGRES_PASSWORD: dev_local_password
+          POSTGRES_DB: kontura
         ports:
-          - 5432:5432
+          - 5433:5432
         options: >-
-          --health-cmd "pg_isready -U kontura -d kontura"
+          --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 5
 
-    # DB-URLs fuer alle Steps. Tests erwarten 5432 im CI (kein Konflikt wie lokal).
     env:
-      TEST_DATABASE_URL: postgresql+asyncpg://kontura:dev_local_password@localhost:5432/kontura
-      DATABASE_URL: postgresql+asyncpg://kontura:dev_local_password@localhost:5432/kontura
+      # Connection-String matched conftest.py / settings.database_url
+      DATABASE_URL: postgresql+asyncpg://kontura:dev_local_password@localhost:5433/kontura
+      # Rate-Limiting in CI aus (gleiche Logik wie lokal)
+      RATE_LIMIT_ENABLED: "false"
+      # Dummy JWT-Secret (32+ chars) - reicht fuer Tests
+      JWT_SECRET: "ci-test-secret-do-not-use-in-production-please"
 
     steps:
-      # 1. Code auschecken
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 2. uv installieren (ultra-schnell)
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v4
         with:
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
-      # 3. Python 3.11 einrichten
-      - name: Set up Python 3.11
-        run: uv python install 3.11
+      - name: Install Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
 
-      # 4. Dependencies installieren (inkl. Dev-Dependencies)
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --frozen
 
-      # 5. Ruff: Lint-Check
-      - name: Ruff lint
-        run: uv run ruff check .
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5433 -U kontura; then
+              echo "Postgres is ready"; break
+            fi
+            echo "Waiting for Postgres... ($i/30)"
+            sleep 1
+          done
 
-      # 6. Ruff: Format-Check (ohne Aenderungen)
-      - name: Ruff format check
-        run: uv run ruff format --check .
-
-      # 7. Mypy: Static Type Checking
-      - name: Mypy type check
-        run: uv run mypy src/ tests/
-
-      # 8. Pytest: Alle Tests mit Coverage (gegen echte Postgres-DB)
-      - name: Pytest with coverage
-        run: uv run pytest -v --cov=src/kontura --cov-report=term-missing --cov-report=xml
-
-      # 9. Coverage-Report als Artefakt speichern
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: coverage-report
-          path: coverage.xml
-          retention-days: 30
+      - name: Run pytest
+        run: uv run pytest --tb=short
