@@ -98,6 +98,7 @@ jobs:
       RATE_LIMIT_ENABLED: "false"
       # Dummy JWT-Secret (32+ chars) - nur fuer CI.
       JWT_SECRET: "ci-test-secret-do-not-use-in-production-please"
+      OPENAI_API_KEY: "test-key-dummy-not-real"
 
     steps:
       - uses: actions/checkout@v4
