@@ -3,13 +3,14 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kontura.api.dependencies import TenantDep
 from kontura.api.invoices.repository import InvoiceRepository
 from kontura.api.invoices.schemas import InvoiceCreate, InvoiceRead
+from kontura.core.exceptions import ConflictError, NotFoundError
 from kontura.infra.db import get_session
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
@@ -23,7 +24,7 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
     status_code=status.HTTP_201_CREATED,
     summary="Legt eine neue Eingangsrechnung an",
     responses={
-        401: {"description": "X-Tenant-Id Header fehlt"},
+        401: {"description": "JWT fehlt oder ungueltig"},
         409: {"description": "Rechnungsnummer existiert bereits fuer diesen Tenant"},
     },
 )
@@ -39,12 +40,9 @@ async def create_invoice(
     except IntegrityError as exc:
         # K4: composite UniqueConstraint (tenant_id, invoice_number) verletzt.
         await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"Rechnungsnummer '{payload.invoice_number}' existiert bereits "
-                f"fuer Tenant '{tenant.tenant_id}'."
-            ),
+        raise ConflictError(
+            f"Rechnungsnummer '{payload.invoice_number}' existiert bereits "
+            f"fuer Tenant '{tenant.tenant_id}'."
         ) from exc
     await session.refresh(invoice)
     return InvoiceRead.model_validate(invoice)
@@ -80,8 +78,5 @@ async def get_invoice(
     repo = InvoiceRepository(session)
     invoice = await repo.get_by_id(tenant, invoice_id)
     if invoice is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Invoice mit id={invoice_id} nicht gefunden",
-        )
+        raise NotFoundError(f"Invoice mit id={invoice_id} nicht gefunden")
     return InvoiceRead.model_validate(invoice)

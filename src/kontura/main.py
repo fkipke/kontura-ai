@@ -10,6 +10,7 @@ from kontura import __version__
 from kontura.ai.audit.audited_provider import AuditedAIProvider
 from kontura.ai.factory import get_ai_provider
 from kontura.api.auth import router as auth_router
+from kontura.api.error_handlers import register_exception_handlers
 from kontura.api.invoices import router as invoices_router
 from kontura.api.middleware import RequestContextMiddleware
 from kontura.api.v1 import api_v1_router
@@ -33,7 +34,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     logger.info("application_shutting_down")
 
-    # H2-Fix: AuditRepository hat eigene Engine - beim Shutdown sauber schliessen.
     provider = get_ai_provider()
     if isinstance(provider, AuditedAIProvider):
         await provider.audit_repo.dispose()
@@ -53,9 +53,10 @@ def create_app() -> FastAPI:
     )
 
     # Middleware-Reihenfolge: zuletzt registrierte Middleware laeuft ZUERST.
-    # RequestContextMiddleware soll als ERSTE laufen (request_id setzen,
-    # bevor irgendwer was loggt) -> also als LETZTE registrieren.
     app.add_middleware(RequestContextMiddleware)
+
+    # Zentrale Exception-Handler (RFC9457 Problem Details)
+    register_exception_handlers(app)
 
     @app.get("/health", tags=["System"])
     async def health() -> dict[str, str]:
