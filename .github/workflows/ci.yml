@@ -1,15 +1,4 @@
 # Continuous Integration - laeuft bei jedem Push + jedem PR auf main.
-#
-# Senior-Pattern: 3 parallele Jobs (lint / typecheck / test)
-# ===========================================================
-# - Schnelles Feedback: ruff (~30s) blockiert Devs nicht, wenn nur typecheck rot ist.
-# - Test-Job nutzt echtes Postgres+pgvector (Service-Container), kein Mock.
-# - uv-Cache via official action - spart ~2min pro Run.
-#
-# Senior-Detail: concurrency-Group
-# =================================
-# Wenn jemand 3 Commits hintereinander pusht, canceln wir alte Runs -
-# sonst stehen 3 Pipelines in der Queue und blockieren sich gegenseitig.
 
 name: CI
 
@@ -19,12 +8,10 @@ on:
   pull_request:
     branches: [main]
 
-# Doppelte Runs vermeiden + alte Runs bei neuen Pushes canceln
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Default: nur lesen. Einzelne Jobs koennen mehr Permissions anfordern.
 permissions:
   contents: read
 
@@ -84,29 +71,32 @@ jobs:
     name: Tests (pytest + Postgres)
     runs-on: ubuntu-latest
 
-    # Service-Container: Postgres mit pgvector als Sidecar.
-    # pgvector/pgvector:pg16 ist das offizielle Image mit pgvector preinstalled.
     services:
       postgres:
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: kontura
           POSTGRES_PASSWORD: dev_local_password
-          POSTGRES_DB: kontura
+          # WICHTIG: Test-DB heisst 'kontura_test' (siehe conftest.py).
+          POSTGRES_DB: kontura_test
         ports:
           - 5433:5432
+        # Healthcheck mit explizitem User -> kein 'role "root" does not exist'-Spam.
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U kontura -d kontura_test"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
     env:
-      # Connection-String matched conftest.py / settings.database_url
-      DATABASE_URL: postgresql+asyncpg://kontura:dev_local_password@localhost:5433/kontura
-      # Rate-Limiting in CI aus (gleiche Logik wie lokal)
+      # Connection-String matched conftest.TEST_DATABASE_URL exakt.
+      TEST_DATABASE_URL: postgresql+asyncpg://kontura:dev_local_password@localhost:5433/kontura_test
+      # Kontura-App-DB (falls Tests sie indirekt anfassen) auf gleiche Test-DB,
+      # damit nichts auf 'kontura' (das es im CI nicht gibt) versucht zu connecten.
+      DATABASE_URL: postgresql+asyncpg://kontura:dev_local_password@localhost:5433/kontura_test
+      # Rate-Limiting in CI aus (gleiche Logik wie lokal).
       RATE_LIMIT_ENABLED: "false"
-      # Dummy JWT-Secret (32+ chars) - reicht fuer Tests
+      # Dummy JWT-Secret (32+ chars) - nur fuer CI.
       JWT_SECRET: "ci-test-secret-do-not-use-in-production-please"
 
     steps:
@@ -128,7 +118,7 @@ jobs:
       - name: Wait for Postgres
         run: |
           for i in {1..30}; do
-            if pg_isready -h localhost -p 5433 -U kontura; then
+            if pg_isready -h localhost -p 5433 -U kontura -d kontura_test; then
               echo "Postgres is ready"; break
             fi
             echo "Waiting for Postgres... ($i/30)"
