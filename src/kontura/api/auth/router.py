@@ -1,10 +1,18 @@
-"""HTTP-Endpoints fuer Authentication."""
+"""HTTP-Endpoints fuer Authentication.
+
+Rate-Limiting (Brute-Force-Schutz):
+- /register: 5/min pro IP
+- /login: 10/min pro IP
+
+slowapi-Detail: der `request: Request` Parameter MUSS in der Endpoint-Signatur
+stehen, damit slowapi auf den Request zugreifen kann (Decorator inspiziert Args).
+"""
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,8 +23,9 @@ from kontura.api.auth.schemas import (
     TokenResponse,
 )
 from kontura.api.auth.service import AuthService
+from kontura.api.rate_limit import ip_key, limiter
 from kontura.core.config import settings
-from kontura.core.exceptions import ConflictError, UnauthorizedError
+from kontura.core.exceptions import ConflictError
 from kontura.core.jwt import encode_token
 from kontura.infra.db import get_session
 
@@ -40,9 +49,15 @@ def _build_token_response(user_id: str, tenant_id: str, email: str) -> TokenResp
     summary="Legt einen neuen Tenant + ersten Admin-User an",
     responses={
         409: {"description": "Tenant-Slug existiert bereits"},
+        429: {"description": "Rate-Limit ueberschritten"},
     },
 )
-async def register(payload: RegisterRequest, session: SessionDep) -> TokenResponse:
+@limiter.limit(settings.rate_limit_register_per_ip, key_func=ip_key)
+async def register(
+    request: Request,  # noqa: ARG001 - von slowapi gebraucht
+    payload: RegisterRequest,
+    session: SessionDep,
+) -> TokenResponse:
     service = AuthService(
         tenant_repo=TenantRepository(session),
         user_repo=UserRepository(session),
@@ -54,9 +69,6 @@ async def register(payload: RegisterRequest, session: SessionDep) -> TokenRespon
         await session.rollback()
         raise
     except IntegrityError as exc:
-        # DB-seitiger Race-Condition-Fallback (zwei parallele Register-Calls
-        # mit gleichem Slug). Wir mappen auf ConflictError, damit unser
-        # zentraler Handler 409 + RFC9457-Body liefert.
         await session.rollback()
         raise ConflictError("User existiert bereits in diesem Tenant.") from exc
 
@@ -73,20 +85,22 @@ async def register(payload: RegisterRequest, session: SessionDep) -> TokenRespon
     summary="Login: gibt einen JWT zurueck",
     responses={
         401: {"description": "Email oder Passwort ungueltig"},
+        429: {"description": "Rate-Limit ueberschritten"},
     },
 )
-async def login(payload: LoginRequest, session: SessionDep) -> TokenResponse:
+@limiter.limit(settings.rate_limit_login_per_ip, key_func=ip_key)
+async def login(
+    request: Request,  # noqa: ARG001 - von slowapi gebraucht
+    payload: LoginRequest,
+    session: SessionDep,
+) -> TokenResponse:
     service = AuthService(
         tenant_repo=TenantRepository(session),
         user_repo=UserRepository(session),
     )
-    user = await service.login(payload)  # wirft UnauthorizedError bei Fehler
+    user = await service.login(payload)
     return _build_token_response(
         user_id=str(user.id),
         tenant_id=user.tenant_id,
         email=user.email,
     )
-
-
-# Re-export, damit Mypy weiss, dass wir UnauthorizedError nutzen (Static-Analyse-Hilfe).
-__all__ = ["router", "UnauthorizedError"]

@@ -76,5 +76,24 @@ class Settings(BaseSettings):
         description="Token-Gueltigkeit in Minuten (Default: 24h)",
     )
 
+    # ==========================================
+    # Rate-Limiting (slowapi)
+    # ==========================================
+    # Im Test deaktivierbar via ENV (RATE_LIMIT_ENABLED=false), damit
+    # bestehende Tests nicht durch Limits aus dem Tritt kommen.
+    rate_limit_enabled: bool = Field(
+        default=True,
+        description="Master-Switch fuer Rate-Limiting (in Tests: false)",
+    )
+
+    # Pro-IP Limits (Brute-Force-Schutz fuer unauthentifizierte Endpoints)
+    rate_limit_register_per_ip: str = Field(default="5/minute")
+    rate_limit_login_per_ip: str = Field(default="10/minute")
+
+    # Pro-Tenant Limits (authentifizierte Endpoints)
+    rate_limit_default_per_tenant: str = Field(default="60/minute")
+    rate_limit_llm_per_tenant: str = Field(default="20/minute")
+    rate_limit_audit_per_tenant: str = Field(default="30/minute")
+
 
 settings = Settings()

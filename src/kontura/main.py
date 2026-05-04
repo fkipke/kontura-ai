@@ -13,6 +13,7 @@ from kontura.api.auth import router as auth_router
 from kontura.api.error_handlers import register_exception_handlers
 from kontura.api.invoices import router as invoices_router
 from kontura.api.middleware import RequestContextMiddleware
+from kontura.api.rate_limit import install_rate_limiter
 from kontura.api.v1 import api_v1_router
 from kontura.core.config import settings
 from kontura.core.logging import configure_logging
@@ -52,7 +53,18 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Middleware-Reihenfolge: zuletzt registrierte Middleware laeuft ZUERST.
+    # WICHTIG: Reihenfolge der Middleware
+    # ====================================
+    # add_middleware registriert in UMGEKEHRTER Reihenfolge -
+    # zuletzt registrierte Middleware laeuft als ERSTE.
+    #
+    # Wir wollen:
+    #   1. RequestContextMiddleware (Request-Id setzen, Logging)
+    #   2. SlowAPIMiddleware (Rate-Limiting checken)
+    #   3. Endpoint
+    #
+    # Also Reihenfolge der add_middleware-Aufrufe: erst SlowAPI, dann Context.
+    install_rate_limiter(app)  # haengt SlowAPIMiddleware + 429-Handler an
     app.add_middleware(RequestContextMiddleware)
 
     # Zentrale Exception-Handler (RFC9457 Problem Details)

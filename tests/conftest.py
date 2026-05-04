@@ -10,6 +10,12 @@ Senior-Setup:
 """
 
 import os
+
+# Rate-Limiting in Tests AUS - sonst kommen sich Tests gegenseitig ins Gehege.
+# Spezifische Rate-Limit-Tests (test_rate_limit.py) aktivieren das Limit gezielt
+# via direktem limiter.enabled-Toggle.
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
+
 from collections.abc import AsyncGenerator
 
 import pytest_asyncio

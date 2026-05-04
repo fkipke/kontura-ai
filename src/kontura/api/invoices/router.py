@@ -1,15 +1,17 @@
-"""HTTP-Endpoints fuer Eingangsrechnungen (tenant-isoliert)."""
+"""HTTP-Endpoints fuer Eingangsrechnungen (tenant-isoliert + rate-limited)."""
 
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kontura.api.dependencies import TenantDep
 from kontura.api.invoices.repository import InvoiceRepository
 from kontura.api.invoices.schemas import InvoiceCreate, InvoiceRead
+from kontura.api.rate_limit import limiter
+from kontura.core.config import settings
 from kontura.core.exceptions import ConflictError, NotFoundError
 from kontura.infra.db import get_session
 
@@ -26,9 +28,12 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
     responses={
         401: {"description": "JWT fehlt oder ungueltig"},
         409: {"description": "Rechnungsnummer existiert bereits fuer diesen Tenant"},
+        429: {"description": "Rate-Limit ueberschritten"},
     },
 )
+@limiter.limit(settings.rate_limit_default_per_tenant)
 async def create_invoice(
+    request: Request,  # noqa: ARG001 - von slowapi gebraucht
     payload: InvoiceCreate,
     tenant: TenantDep,
     session: SessionDep,
@@ -38,7 +43,6 @@ async def create_invoice(
         invoice = await repo.create(tenant, payload)
         await session.commit()
     except IntegrityError as exc:
-        # K4: composite UniqueConstraint (tenant_id, invoice_number) verletzt.
         await session.rollback()
         raise ConflictError(
             f"Rechnungsnummer '{payload.invoice_number}' existiert bereits "
@@ -53,7 +57,9 @@ async def create_invoice(
     response_model=list[InvoiceRead],
     summary="Listet Eingangsrechnungen (sortiert nach Anlage-Datum)",
 )
+@limiter.limit(settings.rate_limit_default_per_tenant)
 async def list_invoices(
+    request: Request,  # noqa: ARG001 - von slowapi gebraucht
     tenant: TenantDep,
     session: SessionDep,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -70,7 +76,9 @@ async def list_invoices(
     summary="Liefert eine einzelne Eingangsrechnung",
     responses={404: {"description": "Rechnung nicht gefunden (im Tenant)"}},
 )
+@limiter.limit(settings.rate_limit_default_per_tenant)
 async def get_invoice(
+    request: Request,  # noqa: ARG001 - von slowapi gebraucht
     invoice_id: uuid.UUID,
     tenant: TenantDep,
     session: SessionDep,
