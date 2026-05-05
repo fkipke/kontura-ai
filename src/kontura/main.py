@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from kontura import __version__
 from kontura.ai.audit.audited_provider import AuditedAIProvider
@@ -18,6 +19,7 @@ from kontura.api.v1 import api_v1_router
 from kontura.core.config import settings
 from kontura.core.logging import configure_logging
 from kontura.infra.db import dispose_engine
+from kontura.middleware.security_headers import SecurityHeadersMiddleware
 
 logger = structlog.get_logger(__name__)
 
@@ -56,16 +58,33 @@ def create_app() -> FastAPI:
     # WICHTIG: Reihenfolge der Middleware
     # ====================================
     # add_middleware registriert in UMGEKEHRTER Reihenfolge -
-    # zuletzt registrierte Middleware laeuft als ERSTE.
+    # zuletzt registrierte Middleware laeuft als ERSTE (am naechsten am Request).
     #
-    # Wir wollen:
-    #   1. RequestContextMiddleware (Request-Id setzen, Logging)
-    #   2. SlowAPIMiddleware (Rate-Limiting checken)
-    #   3. Endpoint
+    # Gewuenschte Execution-Reihenfolge (Request rein -> Response raus):
+    #   1. CORS                 (Origin pruefen, Preflight beantworten)
+    #   2. SecurityHeaders      (OWASP-Header auf Response setzen)
+    #   3. RequestContext       (Request-Id, strukturiertes Logging)
+    #   4. SlowAPI (Rate-Limit) (Limits checken)
+    #   5. Endpoint
     #
-    # Also Reihenfolge der add_middleware-Aufrufe: erst SlowAPI, dann Context.
+    # Also Reihenfolge der add_middleware-Aufrufe: UMGEKEHRT = SlowAPI zuerst,
+    # CORS zuletzt.
     install_rate_limiter(app)  # haengt SlowAPIMiddleware + 429-Handler an
     app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware, enable_hsts=settings.enable_hsts)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allowed_origins,
+        allow_credentials=settings.cors_allow_credentials,
+        # GET/POST/PUT/PATCH/DELETE/OPTIONS - alles was REST braucht.
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        # Wildcard fuer Header - sonst muss man jeden Custom-Header einzeln auflisten.
+        allow_headers=["*"],
+        # Welche Header darf das Frontend lesen? Request-Id ist nuetzlich fuers Debugging.
+        expose_headers=["X-Request-Id"],
+        # Preflight-Cache: Browser muss OPTIONS-Request nicht jedes Mal wiederholen.
+        max_age=600,
+    )
 
     # Zentrale Exception-Handler (RFC9457 Problem Details)
     register_exception_handlers(app)

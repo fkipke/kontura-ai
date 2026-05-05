@@ -95,5 +95,36 @@ class Settings(BaseSettings):
     rate_limit_llm_per_tenant: str = Field(default="20/minute")
     rate_limit_audit_per_tenant: str = Field(default="30/minute")
 
+    # ==========================================
+    # CORS (Cross-Origin Resource Sharing)
+    # ==========================================
+    # Welche Frontend-Origins duerfen die API aufrufen?
+    # Im Dev: typische lokale Frontend-Ports (3000=Next.js, 5173=Vite).
+    # In Production: NUR die echte Frontend-Domain (per ENV ueberschreiben).
+    #
+    # WICHTIG: Niemals "*" in Production - das oeffnet die API fuer JEDE Webseite!
+    cors_allowed_origins: list[str] = Field(
+        default=[
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+        ],
+        description="Erlaubte Frontend-Origins (Komma-getrennt in ENV)",
+    )
+    cors_allow_credentials: bool = Field(
+        default=True,
+        description="Cookies/Auth-Header bei Cross-Origin-Requests erlauben",
+    )
+
+    # ==========================================
+    # Security-Headers (OWASP)
+    # ==========================================
+    # HSTS aktivieren wir nur in Production (im Dev ueber HTTP nervt's).
+    enable_hsts: bool = Field(
+        default=False,
+        description="HTTP Strict Transport Security - in Production AN!",
+    )
+
 
 settings = Settings()
