@@ -1,11 +1,31 @@
 """HTTP-Endpoints fuer Authentication.
 
+Endpoints:
+    POST /api/v1/auth/register  - neuer Tenant + Admin-User
+    POST /api/v1/auth/login     - JWT bekommen
+    GET  /api/v1/auth/me        - aktuellen User aus JWT lesen
+    POST /api/v1/auth/logout    - reine Konvention (JWT ist stateless)
+
 Rate-Limiting (Brute-Force-Schutz):
-- /register: 5/min pro IP
-- /login: 10/min pro IP
+    /register: 5/min pro IP
+    /login: 10/min pro IP
+    /me, /logout: nicht limitiert (authentifiziert + harmlos)
 
 slowapi-Detail: der `request: Request` Parameter MUSS in der Endpoint-Signatur
 stehen, damit slowapi auf den Request zugreifen kann (Decorator inspiziert Args).
+
+/me Senior-Detail:
+    Wir lesen Tenant + User aus dem JWT-Payload, NICHT aus der DB.
+    - Spart 1 DB-Query pro Request
+    - Bleibt stateless
+    - Wenn ein Frontend "frische" User-Daten braucht (z.B. nach Profil-Update),
+      sollte es einen dedizierten Endpoint /api/v1/users/{id} aufrufen.
+
+/logout Senior-Detail:
+    JWTs sind self-contained und nicht serverseitig widerrufbar (bis wir in
+    Phase 2 eine Blocklist mit Redis einfuehren). Dieser Endpoint ist daher
+    eine reine API-Konvention - der echte Logout passiert clientseitig
+    (Cookie loeschen, Token verwerfen).
 """
 
 from __future__ import annotations
@@ -19,10 +39,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kontura.api.auth.repository import TenantRepository, UserRepository
 from kontura.api.auth.schemas import (
     LoginRequest,
+    MeResponse,
     RegisterRequest,
     TokenResponse,
 )
 from kontura.api.auth.service import AuthService
+from kontura.api.dependencies import TokenDep
 from kontura.api.rate_limit import ip_key, limiter
 from kontura.core.config import settings
 from kontura.core.exceptions import ConflictError
@@ -104,3 +126,44 @@ async def login(
         tenant_id=user.tenant_id,
         email=user.email,
     )
+
+
+@router.get(
+    "/me",
+    response_model=MeResponse,
+    summary="Liefert den aktuell eingeloggten User (aus JWT)",
+    responses={
+        401: {"description": "JWT fehlt, ungueltig oder abgelaufen"},
+    },
+)
+async def me(token: TokenDep) -> MeResponse:
+    """Liest User-Infos direkt aus dem JWT-Payload.
+
+    Senior-Detail: kein DB-Hit. Alle benoetigten Felder sind im Token.
+    Wenn das Frontend frischere Daten braucht (z.B. nach Profil-Edit),
+    soll es einen dedizierten /users/{id}-Endpoint anfragen.
+    """
+    return MeResponse(
+        user_id=token.sub,
+        tenant_id=token.tenant_id,
+        email=token.email,
+        token_expires_at=token.exp,
+    )
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Logout (clientseitig: Token verwerfen)",
+)
+async def logout(token: TokenDep) -> None:  # noqa: ARG001 - Auth nur, um 401 zu erzwingen
+    """JWT-Logout ist clientseitig.
+
+    Dieser Endpoint existiert aus zwei Gruenden:
+    1. API-Konvention: Frontends erwarten einen /logout.
+    2. Spaetere Erweiterung: wenn wir in Phase 2 eine Token-Blocklist
+       mit Redis einfuehren, packen wir den Token hier rein.
+
+    Heute: 204 No Content, fertig. Das Frontend muss das Token-Cookie loeschen.
+    """
+    return None

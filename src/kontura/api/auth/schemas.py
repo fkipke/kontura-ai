@@ -52,3 +52,17 @@ class UserResponse(BaseModel):
     email: str
     full_name: str | None
     created_at: datetime
+
+
+class MeResponse(BaseModel):
+    """Antwort fuer GET /api/v1/auth/me.
+
+    Wird direkt aus dem JWT-Payload befuellt - kein DB-Lookup.
+    """
+
+    user_id: str = Field(description="UUID des Users (aus JWT 'sub' Claim)")
+    tenant_id: str = Field(description="Tenant-Slug (aus JWT 'tenant_id' Claim)")
+    email: str = Field(description="Email des Users (aus JWT 'email' Claim)")
+    token_expires_at: int = Field(
+        description="Token-Ablauf als Unix-Timestamp (aus JWT 'exp' Claim)"
+    )
