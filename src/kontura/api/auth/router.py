@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -77,6 +77,7 @@ def _build_token_response(user_id: str, tenant_id: str, email: str) -> TokenResp
 @limiter.limit(settings.rate_limit_register_per_ip, key_func=ip_key)
 async def register(
     request: Request,  # noqa: ARG001 - von slowapi gebraucht
+    response: Response,  # noqa: ARG001 - von slowapi gebraucht (Rate-Limit-Header)
     payload: RegisterRequest,
     session: SessionDep,
 ) -> TokenResponse:
@@ -113,6 +114,7 @@ async def register(
 @limiter.limit(settings.rate_limit_login_per_ip, key_func=ip_key)
 async def login(
     request: Request,  # noqa: ARG001 - von slowapi gebraucht
+    response: Response,  # noqa: ARG001 - von slowapi gebraucht (Rate-Limit-Header)
     payload: LoginRequest,
     session: SessionDep,
 ) -> TokenResponse:
