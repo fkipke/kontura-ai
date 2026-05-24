@@ -54,6 +54,12 @@ class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
 
+    # G2.1: Nettobetrag (nullable - Altdaten ohne Extraktion haben keinen Nettobetrag)
+    net_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+
+    # G2.1: Steuerbetrag (nullable - Altdaten ohne Extraktion haben keinen Steuerbetrag)
+    tax_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+
     __table_args__ = (
         # K4: invoice_number ist pro Tenant eindeutig (verhindert Doppel-Buchungen).
         # Composite-Index dient gleichzeitig als schneller Tenant-Filter

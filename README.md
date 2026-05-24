@@ -134,6 +134,45 @@ Bei jedem Push auf `main` und jedem Pull-Request laufen automatisch:
 
 → Details: [`.github/workflows/README.md`](.github/workflows/README.md)
 
+---
+
+## G2.1 — AI Extraction
+
+### Endpoints
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `POST` | `/api/v1/invoice-files` | Upload + auto-trigger KI-Extraktion |
+| `POST` | `/api/v1/invoice-files/{id}/extract` | Manuelle Re-Extraktion (`?force=true` erzwingt) |
+| `GET` | `/api/v1/invoice-files/{id}/extraction` | Status + Ergebnis der letzten Extraktion |
+
+### Status-Machine
+
+```
+Upload
+  │
+  ▼
+pending ──► processing ──► completed
+              │
+              ▼
+            failed
+              │
+              └──► processing (Re-Trigger)
+```
+
+- **pending**: Datei hochgeladen, Extraktion noch nicht gestartet
+- **processing**: LLM-Call läuft (atomar gesetzt, für spätere Worker-Erweiterung)
+- **completed**: Extraktion erfolgreich, `Invoice` angelegt und gelinkt
+- **failed**: LLM-Fehler oder Schema-Validierungsfehler, `extraction_error` enthält Grund
+
+### Architektur-Entscheidungen
+
+- **GPT-4o Vision**: kein separater OCR-Schritt — Modell liest direkt PDF-Seiten als PNG
+- **PyMuPDF**: PDF-Rendering pure-Python, kein Poppler/Ghostscript nötig
+- **FastAPI BackgroundTasks**: kein Redis, kein Celery — reicht für MVP
+- **Structured Outputs** (`response_format=json_schema, strict=True`): garantiert valides JSON
+- **Auto-Link**: `(tenant_id, invoice_number)` UniqueConstraint verhindert Duplikate
+
 ### Dependency-Updates
 
 Dependabot prüft wöchentlich (montags) auf Updates für:
@@ -153,8 +192,8 @@ Konfiguration: [`.github/dependabot.yml`](.github/dependabot.yml)
 - [x] **H1 — CI-Pipeline:** Automatische Quality-Gates auf jedem Push
 - [x] **H2 — Dependabot + Security-Scanning:** Automatische Update-PRs
 - [x] **G2.0 — Invoice File Upload:** `POST /api/v1/invoice-files` (PDF/PNG/JPEG), `GET /api/v1/invoice-files`, `GET /api/v1/invoice-files/{id}` — mit Magic-Byte-Validierung, SHA-256-Deduplication und Tenant-Isolation
+- [x] **G2.1 — KI-Extraktion:** GPT-4o Vision, structured outputs, async via FastAPI BackgroundTasks, auto-link zu Invoice
 - [ ] **G1 — Frontend (Next.js):** Login, Rechnungsliste, Detail-Ansicht
-- [ ] **G2.1 — KI-Extraktion:** OCR + LLM-Datenextraktion aus hochgeladenen Dateien
 - [ ] **Phase 3 — Validation & Booking:** SKR03-Kontierung, Buchungsvorschlag
 - [ ] **Phase 4 — Integrationen:** SAP FI, DATEV Unternehmen online
 - [ ] **Phase 5 — Pilotkunden:** Onboarding, Produktions-Deployment

@@ -29,6 +29,7 @@ def get_ai_provider() -> AIProvider:
             api_key=settings.openai_api_key,
             embedding_model=settings.openai_embedding_model,
             chat_model=settings.openai_chat_model,
+            vision_model=settings.openai_vision_model,
         )
     else:
         # Spaeter: azure, ollama, mistral
