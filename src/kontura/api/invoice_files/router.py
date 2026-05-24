@@ -165,9 +165,11 @@ async def upload_invoice_file(
     # sub aus JWT ist die User-ID (UUID als String)
     try:
         user_uuid = uuid.UUID(token.sub)
-    except ValueError:
-        # Falls sub kein gueltiger UUID-String ist (z.B. in Tests mit "test-user-id")
-        user_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token subject",
+        ) from exc
 
     invoice_file = await repo.create(
         tenant=tenant,

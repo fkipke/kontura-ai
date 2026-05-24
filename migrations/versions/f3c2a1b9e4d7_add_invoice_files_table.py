@@ -27,6 +27,7 @@ def upgrade() -> None:
     """Erstellt die invoice_files-Tabelle samt Constraints und Indizes."""
     op.create_table(
         "invoice_files",
+        sa.Column("id", sa.UUID(), nullable=False),
         sa.Column("tenant_id", sa.String(length=64), nullable=False),
         sa.Column(
             "uploaded_by_user_id",
@@ -45,7 +46,6 @@ def upgrade() -> None:
         sa.Column("size_bytes", sa.Integer(), nullable=False),
         sa.Column("sha256", sa.String(length=64), nullable=False),
         sa.Column("storage_path", sa.String(length=500), nullable=False),
-        sa.Column("id", sa.UUID(), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
