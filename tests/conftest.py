@@ -10,6 +10,7 @@ Senior-Setup:
 """
 
 import os
+import uuid
 
 # Rate-Limiting in Tests AUS - sonst kommen sich Tests gegenseitig ins Gehege.
 # Spezifische Rate-Limit-Tests (test_rate_limit.py) aktivieren das Limit gezielt
@@ -34,6 +35,7 @@ import kontura.infra.models  # noqa: F401  # registriert ALLE Modelle bei Base.m
 from kontura.api.dependencies import get_file_storage
 from kontura.core.jwt import encode_token
 from kontura.infra.db import Base, get_session
+from kontura.infra.models.user import User
 from kontura.infra.storage import LocalFilesystemStorage
 from kontura.main import app
 
@@ -44,6 +46,11 @@ TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://kontura:dev_local_password@localhost:5433/kontura_test",
 )
+
+TEST_USER_IDS_BY_TENANT = {
+    "acme-corp": "11111111-1111-1111-1111-111111111111",
+    "other-corp": "22222222-2222-2222-2222-222222222222",
+}
 
 
 @pytest_asyncio.fixture
@@ -76,8 +83,32 @@ async def session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest_asyncio.fixture
+async def test_user(session: AsyncSession) -> None:
+    """Legt stabile Test-User fuer JWT-Sub/FK-Tests an."""
+    session.add_all(
+        [
+            User(
+                id=uuid.UUID(TEST_USER_IDS_BY_TENANT["acme-corp"]),
+                tenant_id="acme-corp",
+                email="test@example.com",
+                password_hash="$2b$12$dummy.hash.for.tests.only.not.real.bcrypt",
+            ),
+            User(
+                id=uuid.UUID(TEST_USER_IDS_BY_TENANT["other-corp"]),
+                tenant_id="other-corp",
+                email="other@example.com",
+                password_hash="$2b$12$dummy.hash.for.tests.only.not.real.bcrypt",
+            ),
+        ]
+    )
+    await session.commit()
+
+
+@pytest_asyncio.fixture
 async def client(
-    session: AsyncSession, tmp_path: pathlib.Path
+    session: AsyncSession,
+    tmp_path: pathlib.Path,
+    test_user: None,  # noqa: ARG001
 ) -> AsyncGenerator[AsyncClient, None]:
     """HTTP-Client gegen die App, mit Dependency-Overrides fuer Session und FileStorage.
 
@@ -99,10 +130,13 @@ async def client(
     app.dependency_overrides.clear()
 
 
-def auth_headers(tenant_id: str = "acme-corp", *, user_id: str = "test-user-id") -> dict[str, str]:
+def auth_headers(tenant_id: str = "acme-corp", *, user_id: str | None = None) -> dict[str, str]:
     """Erzeugt einen Authorization-Header mit gueltigem JWT.
 
     Tests, die einen Tenant brauchen, nutzen das hier statt 'X-Tenant-Id'.
     """
-    token = encode_token(sub=user_id, tenant_id=tenant_id, email="test@example.com")
+    effective_user_id = user_id or TEST_USER_IDS_BY_TENANT.get(
+        tenant_id, TEST_USER_IDS_BY_TENANT["acme-corp"]
+    )
+    token = encode_token(sub=effective_user_id, tenant_id=tenant_id, email="test@example.com")
     return {"Authorization": f"Bearer {token}"}

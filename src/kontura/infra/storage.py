@@ -15,7 +15,6 @@ TODO (future): Virus-Scan-Hook vor save() einhaengen (ClamAV o.ae.).
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -110,8 +109,3 @@ class LocalFilesystemStorage:
             await aiofiles.os.remove(str(full_path))
         except FileNotFoundError:
             pass  # Idempotent: bereits weg ist OK
-
-
-def _verify_sha256(content: bytes, sha256: str) -> bool:
-    """Prueft ob der SHA-256-Hash des Inhalts mit dem erwarteten Hash uebereinstimmt."""
-    return hashlib.sha256(content).hexdigest() == sha256
