@@ -104,6 +104,13 @@ postgres-data/
 pgdata/
 
 # ==========================================
+# Backend-Datei-Uploads (G2.0)
+# ==========================================
+# Lokale Invoice-File-Uploads werden nicht in Git committed.
+# In Production auf ein persistentes Volume zeigen (S3, EFS etc.).
+backend-data/
+
+# ==========================================
 # Jupyter / Notebooks
 # ==========================================
 .ipynb_checkpoints/

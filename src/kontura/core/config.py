@@ -126,5 +126,22 @@ class Settings(BaseSettings):
         description="HTTP Strict Transport Security - in Production AN!",
     )
 
+    # ==========================================
+    # Invoice-File-Storage (G2.0)
+    # ==========================================
+    # Basisverzeichnis fuer hochgeladene Rechnungsdateien.
+    # In Production per ENV auf ein persistentes Volume zeigen.
+    invoice_files_dir: str = Field(
+        default="./backend-data/invoice-files",
+        description="Lokales Verzeichnis fuer Invoice-File-Uploads",
+    )
+
+    # Maximale Dateigroesse in Bytes (default: 10 MB).
+    # In Production kann dieser Wert per ENV angehoben werden.
+    invoice_file_max_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        description="Maximale Upload-Groesse in Bytes (Default: 10 MB)",
+    )
+
 
 settings = Settings()

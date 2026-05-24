@@ -10,12 +10,14 @@ Senior-Setup:
 """
 
 import os
+import uuid
 
 # Rate-Limiting in Tests AUS - sonst kommen sich Tests gegenseitig ins Gehege.
 # Spezifische Rate-Limit-Tests (test_rate_limit.py) aktivieren das Limit gezielt
 # via direktem limiter.enabled-Toggle.
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
+import pathlib
 from collections.abc import AsyncGenerator
 
 import pytest_asyncio
@@ -30,8 +32,11 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 import kontura.infra.models  # noqa: F401  # registriert ALLE Modelle bei Base.metadata
+from kontura.api.dependencies import get_file_storage
 from kontura.core.jwt import encode_token
 from kontura.infra.db import Base, get_session
+from kontura.infra.models.user import User
+from kontura.infra.storage import LocalFilesystemStorage
 from kontura.main import app
 
 # Test-DB-URL: nutzt TEST_DATABASE_URL falls gesetzt (CI), sonst eigene Test-DB
@@ -41,6 +46,11 @@ TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://kontura:dev_local_password@localhost:5433/kontura_test",
 )
+
+TEST_USER_IDS_BY_TENANT = {
+    "acme-corp": "11111111-1111-1111-1111-111111111111",
+    "other-corp": "22222222-2222-2222-2222-222222222222",
+}
 
 
 @pytest_asyncio.fixture
@@ -73,23 +83,60 @@ async def session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest_asyncio.fixture
-async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    """HTTP-Client gegen die App, mit get_session-Dependency-Override."""
+async def test_user(session: AsyncSession) -> None:
+    """Legt stabile Test-User fuer JWT-Sub/FK-Tests an."""
+    session.add_all(
+        [
+            User(
+                id=uuid.UUID(TEST_USER_IDS_BY_TENANT["acme-corp"]),
+                tenant_id="acme-corp",
+                email="test@example.com",
+                password_hash="$2b$12$dummy.hash.for.tests.only.not.real.bcrypt",
+            ),
+            User(
+                id=uuid.UUID(TEST_USER_IDS_BY_TENANT["other-corp"]),
+                tenant_id="other-corp",
+                email="other@example.com",
+                password_hash="$2b$12$dummy.hash.for.tests.only.not.real.bcrypt",
+            ),
+        ]
+    )
+    await session.commit()
+
+
+@pytest_asyncio.fixture
+async def client(
+    session: AsyncSession,
+    tmp_path: pathlib.Path,
+    test_user: None,  # noqa: ARG001
+) -> AsyncGenerator[AsyncClient, None]:
+    """HTTP-Client gegen die App, mit Dependency-Overrides fuer Session und FileStorage.
+
+    tmp_path stellt sicher, dass jeder Test sein eigenes isoliertes Datei-Verzeichnis
+    bekommt - keine Datei-Leaks zwischen Tests.
+    """
 
     async def _override_get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
+    def _override_get_file_storage() -> LocalFilesystemStorage:
+        return LocalFilesystemStorage(base_dir=str(tmp_path / "invoice-files"))
+
     app.dependency_overrides[get_session] = _override_get_session
+    app.dependency_overrides[get_file_storage] = _override_get_file_storage
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
 
 
-def auth_headers(tenant_id: str = "acme-corp", *, user_id: str = "test-user-id") -> dict[str, str]:
+def auth_headers(tenant_id: str = "acme-corp", *, user_id: str | None = None) -> dict[str, str]:
     """Erzeugt einen Authorization-Header mit gueltigem JWT.
 
     Tests, die einen Tenant brauchen, nutzen das hier statt 'X-Tenant-Id'.
     """
-    token = encode_token(sub=user_id, tenant_id=tenant_id, email="test@example.com")
+    effective_user_id = user_id or TEST_USER_IDS_BY_TENANT.get(
+        tenant_id, TEST_USER_IDS_BY_TENANT["acme-corp"]
+    )
+    token = encode_token(sub=effective_user_id, tenant_id=tenant_id, email="test@example.com")
     return {"Authorization": f"Bearer {token}"}
