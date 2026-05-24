@@ -2,19 +2,13 @@
 #
 # Senior-Konzept:
 # ===============
-# 2 Ecosysteme zu pruefen:
+# 3 Ecosysteme zu pruefen:
 # 1. Python-Pakete (uv.lock)        -> ecosystem: pip
 # 2. GitHub Actions Versionen       -> ecosystem: github-actions
-#
-# Schedule: woechentlich (Montag morgens) - haeufiger waere Spam,
-# seltener verpasst man Security-Patches.
-#
-# open-pull-requests-limit: 5 - mehr als 5 PRs gleichzeitig nervt nur,
-# wir mergen sowieso nacheinander.
+# 3. Frontend npm-Pakete            -> ecosystem: npm
 
 version: 2
 updates:
-  # Python-Dependencies (liest pyproject.toml + uv.lock)
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -29,14 +23,12 @@ updates:
     commit-message:
       prefix: "deps"
       include: "scope"
-    # Major-Updates separat - die brechen oft was und brauchen review.
     groups:
       python-minor-patch:
         update-types:
           - "minor"
           - "patch"
 
-  # GitHub Actions (versionierte Action-Tags wie astral-sh/setup-uv@v4)
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -51,3 +43,23 @@ updates:
     commit-message:
       prefix: "ci"
       include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "deps(frontend)"
+      include: "scope"
+    groups:
+      frontend-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
