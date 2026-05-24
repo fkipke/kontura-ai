@@ -12,6 +12,7 @@ from kontura.ai.audit.audited_provider import AuditedAIProvider
 from kontura.ai.factory import get_ai_provider
 from kontura.api.auth import router as auth_router
 from kontura.api.error_handlers import register_exception_handlers
+from kontura.api.invoice_files import router as invoice_files_router
 from kontura.api.invoices import router as invoices_router
 from kontura.api.middleware import RequestContextMiddleware
 from kontura.api.rate_limit import install_rate_limiter
@@ -81,7 +82,7 @@ def create_app() -> FastAPI:
         # Wildcard fuer Header - sonst muss man jeden Custom-Header einzeln auflisten.
         allow_headers=["*"],
         # Welche Header darf das Frontend lesen? Request-Id ist nuetzlich fuers Debugging.
-        expose_headers=["X-Request-Id"],
+        expose_headers=["X-Request-Id", "X-Deduplicated", "X-Total-Count"],
         # Preflight-Cache: Browser muss OPTIONS-Request nicht jedes Mal wiederholen.
         max_age=600,
     )
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     # Domain-Router registrieren
     app.include_router(auth_router)
     app.include_router(invoices_router)
+    app.include_router(invoice_files_router, prefix="/api/v1")
     app.include_router(api_v1_router)
 
     return app

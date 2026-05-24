@@ -16,6 +16,7 @@ import os
 # via direktem limiter.enabled-Toggle.
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
+import pathlib
 from collections.abc import AsyncGenerator
 
 import pytest_asyncio
@@ -30,8 +31,10 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 import kontura.infra.models  # noqa: F401  # registriert ALLE Modelle bei Base.metadata
+from kontura.api.dependencies import get_file_storage
 from kontura.core.jwt import encode_token
 from kontura.infra.db import Base, get_session
+from kontura.infra.storage import LocalFilesystemStorage
 from kontura.main import app
 
 # Test-DB-URL: nutzt TEST_DATABASE_URL falls gesetzt (CI), sonst eigene Test-DB
@@ -73,13 +76,23 @@ async def session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest_asyncio.fixture
-async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    """HTTP-Client gegen die App, mit get_session-Dependency-Override."""
+async def client(
+    session: AsyncSession, tmp_path: pathlib.Path
+) -> AsyncGenerator[AsyncClient, None]:
+    """HTTP-Client gegen die App, mit Dependency-Overrides fuer Session und FileStorage.
+
+    tmp_path stellt sicher, dass jeder Test sein eigenes isoliertes Datei-Verzeichnis
+    bekommt - keine Datei-Leaks zwischen Tests.
+    """
 
     async def _override_get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
+    def _override_get_file_storage() -> LocalFilesystemStorage:
+        return LocalFilesystemStorage(base_dir=str(tmp_path / "invoice-files"))
+
     app.dependency_overrides[get_session] = _override_get_session
+    app.dependency_overrides[get_file_storage] = _override_get_file_storage
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

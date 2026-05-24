@@ -9,6 +9,7 @@ authors = [
 ]
 license = { text = "MIT" }
 dependencies = [
+    "aiofiles>=25.1.0",
     "alembic>=1.18.4",
     "asyncpg>=0.31.0",
     "bcrypt>=4.2",
@@ -19,6 +20,7 @@ dependencies = [
     "pgvector>=0.3",
     "pydantic[email]>=2.13.3",
     "pydantic-settings>=2.14.0",
+    "python-multipart>=0.0.9",
     "slowapi>=0.1.9",
     "pyjwt>=2.10",
     "sqlalchemy[asyncio]>=2.0",

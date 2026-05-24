@@ -152,8 +152,9 @@ Konfiguration: [`.github/dependabot.yml`](.github/dependabot.yml)
 - [x] **F4 — CORS + Security-Headers:** OWASP-Basics + Frontend-ready
 - [x] **H1 — CI-Pipeline:** Automatische Quality-Gates auf jedem Push
 - [x] **H2 — Dependabot + Security-Scanning:** Automatische Update-PRs
+- [x] **G2.0 — Invoice File Upload:** `POST /api/v1/invoice-files` (PDF/PNG/JPEG), `GET /api/v1/invoice-files`, `GET /api/v1/invoice-files/{id}` — mit Magic-Byte-Validierung, SHA-256-Deduplication und Tenant-Isolation
 - [ ] **G1 — Frontend (Next.js):** Login, Rechnungsliste, Detail-Ansicht
-- [ ] **Phase 2 — Core Engine:** E-Mail-Intake, OCR, LLM-Extraction
+- [ ] **G2.1 — KI-Extraktion:** OCR + LLM-Datenextraktion aus hochgeladenen Dateien
 - [ ] **Phase 3 — Validation & Booking:** SKR03-Kontierung, Buchungsvorschlag
 - [ ] **Phase 4 — Integrationen:** SAP FI, DATEV Unternehmen online
 - [ ] **Phase 5 — Pilotkunden:** Onboarding, Produktions-Deployment

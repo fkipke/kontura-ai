@@ -19,6 +19,7 @@ Worker-Coroutine nutzt - klassischer Multi-Tenant-Bug.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -26,6 +27,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from kontura.core.jwt import TokenError, TokenPayload, decode_token
 from kontura.core.tenant import TenantContext, current_tenant_var
+from kontura.infra.storage import LocalFilesystemStorage
 
 # HTTPBearer macht aus 'Authorization: Bearer ...' automatisch ein Credentials-Object.
 # auto_error=False, damit WIR die Fehlermeldung kontrollieren (klare 401-Texte).
@@ -79,5 +81,17 @@ async def get_tenant(
         current_tenant_var.reset(token)
 
 
+@lru_cache(maxsize=1)
+def get_file_storage() -> LocalFilesystemStorage:
+    """Singleton-Instanz des lokalen Datei-Speichers.
+
+    lru_cache(maxsize=1) = Singleton-Pattern ohne globale Variable.
+    Wechsel zu S3 spaeter: diese Funktion austauschen, alles andere bleibt.
+    Nicht in Tests ueberschreiben noetig - Tests nutzen tmp_path als base_dir.
+    """
+    return LocalFilesystemStorage()
+
+
 TenantDep = Annotated[TenantContext, Depends(get_tenant)]
 TokenDep = Annotated[TokenPayload, Depends(get_token_payload)]
+FileStorageDep = Annotated[LocalFilesystemStorage, Depends(get_file_storage)]
