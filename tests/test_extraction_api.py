@@ -34,6 +34,7 @@ _PNG_BYTES = (
 def _png_file(name: str = "rechnung.png") -> dict[str, tuple[str, io.BytesIO, str]]:
     return {"file": (name, io.BytesIO(_PNG_BYTES), "image/png")}
 
+
 @pytest.mark.asyncio
 async def test_upload_response_has_pending_extraction_status(
     client: AsyncClient,
@@ -48,13 +49,13 @@ async def test_upload_response_has_pending_extraction_status(
     body = resp.json()
     assert "extraction_status" in body
 
+
 @pytest.mark.skip(
     reason="BG-Task DB-Sichtbarkeit zwischen Test-Session und BG-Session "
     "ist ein bekanntes Test-Infra-Limit (separate Connections sehen "
     "committete Daten nicht in NullPool-Tests). End-to-End via "
     "test_extraction_service.py und manueller Test mit echter PDF."
 )
-
 @pytest.mark.asyncio
 async def test_upload_triggers_extraction_via_background_tasks(
     client: AsyncClient,

@@ -84,7 +84,7 @@ class InvoiceFile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=ExtractionStatus.PENDING,
         server_default=ExtractionStatus.PENDING.value,
     )
-    
+
     # Vollstaendiges extrahiertes JSON-Objekt (JSONB fuer effiziente Queries)
     extraction_result: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
