@@ -24,11 +24,13 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from kontura.ai.base import AIProvider
 from kontura.ai.factory import get_ai_provider
 from kontura.core.jwt import TokenError, TokenPayload, decode_token
 from kontura.core.tenant import TenantContext, current_tenant_var
+from kontura.infra.db import engine as _module_engine
 from kontura.infra.storage import LocalFilesystemStorage
 
 # HTTPBearer macht aus 'Authorization: Bearer ...' automatisch ein Credentials-Object.
@@ -94,7 +96,19 @@ def get_file_storage() -> LocalFilesystemStorage:
     return LocalFilesystemStorage()
 
 
+def get_db_engine() -> AsyncEngine:
+    """Liefert die Modul-Engine. Per Dependency-Override in Tests austauschbar.
+
+    Hintergrund: Background-Tasks koennen die Request-Session nicht weiterverwenden
+    (die ist nach Response-Ende zu). Sie brauchen also Zugriff auf die Engine,
+    um eine eigene Session zu oeffnen. In Tests muss diese Engine die Test-DB-Engine
+    sein, nicht die Modul-Engine die auf die Prod-DB zeigt.
+    """
+    return _module_engine
+
+
 TenantDep = Annotated[TenantContext, Depends(get_tenant)]
 TokenDep = Annotated[TokenPayload, Depends(get_token_payload)]
 FileStorageDep = Annotated[LocalFilesystemStorage, Depends(get_file_storage)]
 AIProviderDep = Annotated[AIProvider, Depends(get_ai_provider)]
+EngineDep = Annotated[AsyncEngine, Depends(get_db_engine)]

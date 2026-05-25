@@ -31,17 +31,23 @@ from fastapi import (
     status,
 )
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from kontura.ai.extraction.service import ExtractionService
-from kontura.api.dependencies import AIProviderDep, FileStorageDep, TenantDep, TokenDep
+from kontura.api.dependencies import (
+    AIProviderDep,
+    EngineDep,
+    FileStorageDep,
+    TenantDep,
+    TokenDep,
+)
 from kontura.api.invoice_files.repository import InvoiceFileRepository
 from kontura.api.invoice_files.schemas import ExtractionStatusResponse, InvoiceFileResponse
 from kontura.api.rate_limit import limiter
 from kontura.core.config import settings
 from kontura.core.exceptions import NotFoundError
 from kontura.core.tenant import TenantContext, current_tenant_var
-from kontura.infra.db import engine, get_session
+from kontura.infra.db import get_session
 
 logger = structlog.get_logger(__name__)
 
@@ -60,27 +66,15 @@ _MAGIC_BYTES: dict[str, bytes] = {
 
 
 def _sanitize_filename(filename: str) -> str:
-    """Bereinigt den Dateinamen: entfernt Pfad-Komponenten, max 255 Zeichen.
-
-    Verhindert Path-Traversal-Angriffe (z.B. '../../etc/passwd').
-    os.path.basename extrahiert nur den letzten Komponenten.
-    """
-    # Entfernt Pfad-Komponenten auf beiden Plattformen
+    """Bereinigt den Dateinamen: entfernt Pfad-Komponenten, max 255 Zeichen."""
     safe = os.path.basename(filename.replace("\\", "/"))
-    # Fallback wenn nur Slashes kommen
     if not safe:
         safe = "upload"
-    # Max 255 Zeichen (Dateisystem-Limit)
     return safe[:255]
 
 
 def _check_magic_bytes(content: bytes, mime_type: str) -> bool:
-    """Prueft ob die ersten Bytes des Inhalts zum MIME-Type passen.
-
-    Verhindert Extension-Spoofing: jemand benennt eine .txt-Datei in .pdf um.
-    Der MIME-Type im Content-Type-Header ist Client-seitig manipulierbar -
-    die Magic-Bytes im Dateiinhalt nicht.
-    """
+    """Prueft ob die ersten Bytes des Inhalts zum MIME-Type passen."""
     magic = _MAGIC_BYTES.get(mime_type)
     if magic is None:
         return False
@@ -88,6 +82,7 @@ def _check_magic_bytes(content: bytes, mime_type: str) -> bool:
 
 
 async def _run_extraction_in_background(
+    engine: AsyncEngine,
     file_id: uuid.UUID,
     tenant: TenantContext,
     ai_provider: object,
@@ -96,6 +91,7 @@ async def _run_extraction_in_background(
     """Fuehrt die Extraktion in einer eigenen DB-Session durch.
 
     Eigene Session notwendig, da die Request-Session nach Response-Ende geschlossen ist.
+    Engine kommt per DI rein - so kann in Tests die Test-DB-Engine injiziert werden.
     Tenant wird explizit als ContextVar gesetzt (Request-Kontext existiert nicht mehr).
     """
     token = current_tenant_var.set(tenant)
@@ -142,17 +138,12 @@ async def upload_invoice_file(
     session: SessionDep,
     storage: FileStorageDep,
     ai_provider: AIProviderDep,
+    engine: EngineDep,
     background_tasks: BackgroundTasks,
 ) -> Response:
-    """Validiert, dedupliziert und speichert eine Rechnungsdatei.
-
-    Gibt HTTP 201 zurueck wenn die Datei neu ist, HTTP 200 wenn sie schon existierte.
-    X-Deduplicated: true Header zeigt dem Client, ob es ein Duplikat war.
-    G2.1: Startet automatisch die KI-Extraktion als BackgroundTask (nur bei neuen Dateien).
-    """
+    """Validiert, dedupliziert und speichert eine Rechnungsdatei."""
     log = logger.bind(tenant_id=tenant.tenant_id)
 
-    # --- 1. Groessen-Check ---
     content = await file.read()
     if len(content) > settings.invoice_file_max_bytes:
         raise HTTPException(
@@ -164,7 +155,6 @@ async def upload_invoice_file(
             ),
         )
 
-    # --- 2. MIME-Type-Check ---
     content_type = (file.content_type or "").split(";")[0].strip().lower()
     if content_type not in _ALLOWED_MIME_TYPES:
         raise HTTPException(
@@ -175,7 +165,6 @@ async def upload_invoice_file(
             ),
         )
 
-    # --- 3. Magic-Bytes-Check (verhindert Extension-Spoofing) ---
     if not _check_magic_bytes(content, content_type):
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -185,15 +174,12 @@ async def upload_invoice_file(
             ),
         )
 
-    # --- 4. Filename-Sanitisierung ---
     original_name = file.filename or "upload"
     safe_filename = _sanitize_filename(original_name)
 
-    # --- SHA-256 berechnen ---
     sha256 = hashlib.sha256(content).hexdigest()
     log = log.bind(sha256=sha256[:16], filename=safe_filename)
 
-    # --- Deduplication-Check ---
     repo = InvoiceFileRepository(session)
     existing = await repo.get_by_sha256(tenant, sha256)
     if existing is not None:
@@ -207,11 +193,8 @@ async def upload_invoice_file(
             headers={"X-Deduplicated": "true"},
         )
 
-    # --- Datei speichern ---
     storage_path = await storage.save(tenant.tenant_id, sha256, content)
 
-    # --- Datenbankzeile anlegen ---
-    # sub aus JWT ist die User-ID (UUID als String)
     try:
         user_uuid = uuid.UUID(token.sub)
     except (TypeError, ValueError) as exc:
@@ -237,6 +220,7 @@ async def upload_invoice_file(
     # --- G2.1: Extraction als BackgroundTask starten (nur neue Dateien) ---
     background_tasks.add_task(
         _run_extraction_in_background,
+        engine,
         invoice_file.id,
         tenant,
         ai_provider,
@@ -302,12 +286,7 @@ async def trigger_extraction(
     ai_provider: AIProviderDep,
     force: Annotated[bool, Query(description="force=true erzwingt Re-Extraktion")] = False,
 ) -> ExtractionStatusResponse:
-    """Fuehrt die KI-Extraktion inline durch und gibt den aktuellen Status zurueck.
-
-    Idempotent: force=false = No-op wenn Status bereits 'completed'.
-    Gibt 202 zurueck mit dem aktuellen Extraktionsstatus.
-    Tenant-Isolation: 404 wenn Datei nicht dem Tenant gehoert.
-    """
+    """Fuehrt die KI-Extraktion inline durch und gibt den aktuellen Status zurueck."""
     service = ExtractionService(
         ai_provider=ai_provider,
         storage=storage,
@@ -347,10 +326,7 @@ async def get_extraction_status(
     tenant: TenantDep,
     session: SessionDep,
 ) -> ExtractionStatusResponse:
-    """Gibt den Extraktionsstatus zurueck.
-
-    Tenant-Isolation: 404 wenn Datei nicht dem Tenant gehoert (kein Info-Leak).
-    """
+    """Gibt den Extraktionsstatus zurueck."""
     repo = InvoiceFileRepository(session)
     invoice_file = await repo.get_by_id(tenant, file_id)
     if invoice_file is None:
@@ -385,11 +361,7 @@ async def get_invoice_file(
     session: SessionDep,
     storage: FileStorageDep,
 ) -> StreamingResponse:
-    """Gibt den Dateiinhalt zurueck - 404 wenn nicht gefunden ODER anderer Tenant.
-
-    Kein Info-Leak: Wir sagen nicht ob die Datei existiert aber einem anderen Tenant
-    gehoert. 404 in beiden Faellen.
-    """
+    """Gibt den Dateiinhalt zurueck - 404 wenn nicht gefunden ODER anderer Tenant."""
     repo = InvoiceFileRepository(session)
     invoice_file = await repo.get_by_id(tenant, file_id)
     if invoice_file is None:
