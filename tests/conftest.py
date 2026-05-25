@@ -37,7 +37,7 @@ from sqlalchemy.pool import NullPool
 import kontura.infra.models  # noqa: F401  # registriert ALLE Modelle bei Base.metadata
 from kontura.ai.base import ChatMessage
 from kontura.ai.factory import get_ai_provider
-from kontura.api.dependencies import get_file_storage
+from kontura.api.dependencies import get_db_engine, get_file_storage
 from kontura.core.jwt import encode_token
 from kontura.infra.db import Base, get_session
 from kontura.infra.models.user import User
@@ -175,6 +175,7 @@ def fake_ai_provider() -> FakeAIProvider:
 @pytest_asyncio.fixture
 async def client(
     session: AsyncSession,
+    engine: AsyncEngine,
     tmp_path: pathlib.Path,
     test_user: None,  # noqa: ARG001
     fake_ai_provider: FakeAIProvider,
@@ -195,10 +196,14 @@ async def client(
     def _override_get_ai_provider() -> FakeAIProvider:
         return fake_ai_provider
 
+    def _override_get_db_engine() -> AsyncEngine:
+        return engine
+
     app.dependency_overrides[get_session] = _override_get_session
     app.dependency_overrides[get_file_storage] = _override_get_file_storage
     app.dependency_overrides[get_ai_provider] = _override_get_ai_provider
-    transport = ASGITransport(app=app)
+    app.dependency_overrides[get_db_engine] = _override_get_db_engine
+    transport = ASGITransport(app=app)    
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()

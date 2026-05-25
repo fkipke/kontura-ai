@@ -34,14 +34,15 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from kontura.ai.extraction.service import ExtractionService
-from kontura.api.dependencies import AIProviderDep, FileStorageDep, TenantDep, TokenDep
+from kontura.api.dependencies import AIProviderDep, EngineDep, FileStorageDep, TenantDep, TokenDep
 from kontura.api.invoice_files.repository import InvoiceFileRepository
 from kontura.api.invoice_files.schemas import ExtractionStatusResponse, InvoiceFileResponse
 from kontura.api.rate_limit import limiter
 from kontura.core.config import settings
 from kontura.core.exceptions import NotFoundError
 from kontura.core.tenant import TenantContext, current_tenant_var
-from kontura.infra.db import engine, get_session
+from kontura.infra.db import get_session
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 logger = structlog.get_logger(__name__)
 
@@ -88,6 +89,7 @@ def _check_magic_bytes(content: bytes, mime_type: str) -> bool:
 
 
 async def _run_extraction_in_background(
+    engine: AsyncEngine,
     file_id: uuid.UUID,
     tenant: TenantContext,
     ai_provider: object,
@@ -142,6 +144,7 @@ async def upload_invoice_file(
     session: SessionDep,
     storage: FileStorageDep,
     ai_provider: AIProviderDep,
+    engine: EngineDep,
     background_tasks: BackgroundTasks,
 ) -> Response:
     """Validiert, dedupliziert und speichert eine Rechnungsdatei.
@@ -237,6 +240,7 @@ async def upload_invoice_file(
     # --- G2.1: Extraction als BackgroundTask starten (nur neue Dateien) ---
     background_tasks.add_task(
         _run_extraction_in_background,
+        engine,
         invoice_file.id,
         tenant,
         ai_provider,
