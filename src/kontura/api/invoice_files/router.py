@@ -1,7 +1,10 @@
 """HTTP-Endpoints fuer Invoice-File-Uploads (tenant-isoliert).
 
-Phase G2.0: Reine Dateispeicherung, keine KI-Extraktion.
-G2.1 wird diesen Router mit AI-Extraktion verbinden.
+Phase G2.0: Reine Dateispeicherung, Tenant-Isolation, Deduplication.
+Phase G2.1: KI-Extraktion als BackgroundTask nach Upload + manuelle Trigger-Endpoints.
+
+Extraction-Endpoints sind im selben Router, da sie logisch zu Invoice-Files gehoeren.
+Eigene Datei waere sauberer fuer sehr grosse Teams - hier reicht eine Datei.
 
 Sicherheitsschichten beim Upload (in dieser Reihenfolge):
 1. Groesse: max INVOICE_FILE_MAX_BYTES (Standard: 10 MB)
@@ -17,17 +20,28 @@ import uuid
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from kontura.api.dependencies import FileStorageDep, TenantDep, TokenDep
+from kontura.ai.extraction.service import ExtractionService
+from kontura.api.dependencies import AIProviderDep, FileStorageDep, TenantDep, TokenDep
 from kontura.api.invoice_files.repository import InvoiceFileRepository
-from kontura.api.invoice_files.schemas import InvoiceFileResponse
+from kontura.api.invoice_files.schemas import ExtractionStatusResponse, InvoiceFileResponse
 from kontura.api.rate_limit import limiter
 from kontura.core.config import settings
 from kontura.core.exceptions import NotFoundError
-from kontura.infra.db import get_session
+from kontura.core.tenant import TenantContext, current_tenant_var
+from kontura.infra.db import engine, get_session
 
 logger = structlog.get_logger(__name__)
 
@@ -73,6 +87,38 @@ def _check_magic_bytes(content: bytes, mime_type: str) -> bool:
     return content[: len(magic)] == magic
 
 
+async def _run_extraction_in_background(
+    file_id: uuid.UUID,
+    tenant: TenantContext,
+    ai_provider: object,
+    storage: object,
+) -> None:
+    """Fuehrt die Extraktion in einer eigenen DB-Session durch.
+
+    Eigene Session notwendig, da die Request-Session nach Response-Ende geschlossen ist.
+    Tenant wird explizit als ContextVar gesetzt (Request-Kontext existiert nicht mehr).
+    """
+    token = current_tenant_var.set(tenant)
+    try:
+        bg_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with bg_session_factory() as bg_session:
+            service = ExtractionService(
+                ai_provider=ai_provider,  # type: ignore[arg-type]
+                storage=storage,  # type: ignore[arg-type]
+                session=bg_session,
+            )
+            await service.extract(tenant, file_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "background_extraction_unhandled_error",
+            file_id=str(file_id),
+            tenant_id=tenant.tenant_id,
+            error=repr(exc),
+        )
+    finally:
+        current_tenant_var.reset(token)
+
+
 @router.post(
     "",
     response_model=InvoiceFileResponse,
@@ -80,7 +126,7 @@ def _check_magic_bytes(content: bytes, mime_type: str) -> bool:
     summary="Laedt eine Rechnungsdatei hoch (PDF/PNG/JPEG)",
     responses={
         200: {"description": "Datei existierte bereits (Deduplication), kein neuer Upload"},
-        201: {"description": "Datei erfolgreich hochgeladen"},
+        201: {"description": "Datei erfolgreich hochgeladen, Extraction gestartet"},
         401: {"description": "JWT fehlt oder ungueltig"},
         413: {"description": "Datei zu gross (max 10 MB)"},
         415: {"description": "Nicht unterstuetzter MIME-Type oder Magic-Byte-Mismatch"},
@@ -95,11 +141,14 @@ async def upload_invoice_file(
     token: TokenDep,
     session: SessionDep,
     storage: FileStorageDep,
+    ai_provider: AIProviderDep,
+    background_tasks: BackgroundTasks,
 ) -> Response:
     """Validiert, dedupliziert und speichert eine Rechnungsdatei.
 
     Gibt HTTP 201 zurueck wenn die Datei neu ist, HTTP 200 wenn sie schon existierte.
     X-Deduplicated: true Header zeigt dem Client, ob es ein Duplikat war.
+    G2.1: Startet automatisch die KI-Extraktion als BackgroundTask (nur bei neuen Dateien).
     """
     log = logger.bind(tenant_id=tenant.tenant_id)
 
@@ -185,6 +234,15 @@ async def upload_invoice_file(
 
     log.info("invoice_file_uploaded", file_id=str(invoice_file.id))
 
+    # --- G2.1: Extraction als BackgroundTask starten (nur neue Dateien) ---
+    background_tasks.add_task(
+        _run_extraction_in_background,
+        invoice_file.id,
+        tenant,
+        ai_provider,
+        storage,
+    )
+
     response_body = InvoiceFileResponse.model_validate(invoice_file)
     return Response(
         content=response_body.model_dump_json(),
@@ -219,6 +277,93 @@ async def list_invoice_files(
         status_code=status.HTTP_200_OK,
         media_type="application/json",
         headers={"X-Total-Count": str(total)},
+    )
+
+
+@router.post(
+    "/{file_id}/extract",
+    response_model=ExtractionStatusResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Triggert die KI-Extraktion fuer eine Rechnungsdatei manuell",
+    responses={
+        202: {"description": "Extraktion gestartet oder abgeschlossen"},
+        401: {"description": "JWT fehlt oder ungueltig"},
+        404: {"description": "Datei nicht gefunden oder anderer Tenant"},
+        429: {"description": "Rate-Limit ueberschritten"},
+    },
+)
+@limiter.limit(settings.rate_limit_llm_per_tenant)
+async def trigger_extraction(
+    request: Request,  # noqa: ARG001 - von slowapi benoetigt
+    file_id: uuid.UUID,
+    tenant: TenantDep,
+    session: SessionDep,
+    storage: FileStorageDep,
+    ai_provider: AIProviderDep,
+    force: Annotated[bool, Query(description="force=true erzwingt Re-Extraktion")] = False,
+) -> ExtractionStatusResponse:
+    """Fuehrt die KI-Extraktion inline durch und gibt den aktuellen Status zurueck.
+
+    Idempotent: force=false = No-op wenn Status bereits 'completed'.
+    Gibt 202 zurueck mit dem aktuellen Extraktionsstatus.
+    Tenant-Isolation: 404 wenn Datei nicht dem Tenant gehoert.
+    """
+    service = ExtractionService(
+        ai_provider=ai_provider,
+        storage=storage,
+        session=session,
+    )
+    try:
+        invoice_file = await service.extract(tenant, file_id, force=force)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return ExtractionStatusResponse(
+        file_id=invoice_file.id,
+        status=invoice_file.extraction_status.value,
+        attempts=invoice_file.extraction_attempts,
+        extracted_at=invoice_file.extracted_at,  # type: ignore[arg-type]
+        error=invoice_file.extraction_error,
+        result=invoice_file.extraction_result,
+        linked_invoice_id=invoice_file.invoice_id,
+    )
+
+
+@router.get(
+    "/{file_id}/extraction",
+    response_model=ExtractionStatusResponse,
+    summary="Liefert den aktuellen Extraktionsstatus einer Rechnungsdatei",
+    responses={
+        200: {"description": "Extraktionsstatus und -ergebnis"},
+        401: {"description": "JWT fehlt oder ungueltig"},
+        404: {"description": "Datei nicht gefunden oder anderer Tenant"},
+        429: {"description": "Rate-Limit ueberschritten"},
+    },
+)
+@limiter.limit(settings.rate_limit_default_per_tenant)
+async def get_extraction_status(
+    request: Request,  # noqa: ARG001 - von slowapi benoetigt
+    file_id: uuid.UUID,
+    tenant: TenantDep,
+    session: SessionDep,
+) -> ExtractionStatusResponse:
+    """Gibt den Extraktionsstatus zurueck.
+
+    Tenant-Isolation: 404 wenn Datei nicht dem Tenant gehoert (kein Info-Leak).
+    """
+    repo = InvoiceFileRepository(session)
+    invoice_file = await repo.get_by_id(tenant, file_id)
+    if invoice_file is None:
+        raise NotFoundError(f"InvoiceFile mit id={file_id} nicht gefunden")
+
+    return ExtractionStatusResponse(
+        file_id=invoice_file.id,
+        status=invoice_file.extraction_status.value,
+        attempts=invoice_file.extraction_attempts,
+        extracted_at=invoice_file.extracted_at,  # type: ignore[arg-type]
+        error=invoice_file.extraction_error,
+        result=invoice_file.extraction_result,
+        linked_invoice_id=invoice_file.invoice_id,
     )
 
 

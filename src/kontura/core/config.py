@@ -143,5 +143,26 @@ class Settings(BaseSettings):
         description="Maximale Upload-Groesse in Bytes (Default: 10 MB)",
     )
 
+    # ==========================================
+    # KI-Extraktion (G2.1)
+    # ==========================================
+    # GPT-4o fuer Vision-Tasks (praeziser als gpt-4o-mini bei Rechnungen).
+    openai_vision_model: str = Field(
+        default="gpt-4o",
+        description="OpenAI-Modell fuer Vision/Extraction-Tasks (default: gpt-4o)",
+    )
+
+    # Maximale Anzahl PDF-Seiten die gerendert werden (Schutz vor Riesen-PDFs).
+    extraction_max_pdf_pages: int = Field(
+        default=10,
+        description="Maximale Anzahl PDF-Seiten fuer Extraction (default: 10)",
+    )
+
+    # DPI-Aufloesung beim PDF-Rendering (PyMuPDF). 150 DPI ist gut fuer OCR.
+    extraction_pdf_dpi: int = Field(
+        default=150,
+        description="DPI fuer PDF-Rendering via PyMuPDF (default: 150)",
+    )
+
 
 settings = Settings()

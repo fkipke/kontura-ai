@@ -7,6 +7,7 @@ Senior-Setup:
 - Schema wird vor jedem Test angelegt und nach jedem Test wieder geloescht.
 - Dependency-Override leitet die App-Session auf die Test-Session um.
 - auth_headers(): Helper fuer Tests, die einen JWT brauchen.
+- FakeAIProvider: Stub fuer AI-Tests ohne echten OpenAI-Aufruf.
 """
 
 import os
@@ -19,7 +20,9 @@ os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 import pathlib
 from collections.abc import AsyncGenerator
+from typing import Any
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
@@ -32,6 +35,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 import kontura.infra.models  # noqa: F401  # registriert ALLE Modelle bei Base.metadata
+from kontura.ai.base import ChatMessage
+from kontura.ai.factory import get_ai_provider
 from kontura.api.dependencies import get_file_storage
 from kontura.core.jwt import encode_token
 from kontura.infra.db import Base, get_session
@@ -51,6 +56,63 @@ TEST_USER_IDS_BY_TENANT = {
     "acme-corp": "11111111-1111-1111-1111-111111111111",
     "other-corp": "22222222-2222-2222-2222-222222222222",
 }
+
+# Gueltiges Extraction-Ergebnis fuer FakeAIProvider (als Default-Rueckgabe)
+VALID_EXTRACTION_RESULT: dict[str, Any] = {
+    "invoice_number": "RE-2024-001",
+    "vendor_name": "Test GmbH",
+    "vendor_address": "Teststrasse 1, 12345 Berlin",
+    "invoice_date": "2024-01-15",
+    "due_date": "2024-02-15",
+    "currency": "EUR",
+    "net_amount": "100.00",
+    "tax_amount": "19.00",
+    "total_amount": "119.00",
+    "line_items": [],
+    "confidence_notes": None,
+}
+
+
+class FakeAIProvider:
+    """Stub-Implementation des AIProvider-Protocols fuer Tests.
+
+    Kein echter API-Aufruf - liefert konfigurierbare Ergebnisse.
+    extract_call_count erlaubt Pruefung ob LLM aufgerufen wurde.
+    """
+
+    name = "fake"
+    embedding_dimension = 8
+
+    def __init__(self) -> None:
+        self.extraction_return_value: dict[str, Any] | Exception = dict(VALID_EXTRACTION_RESULT)
+        self.extract_call_count = 0
+
+    async def embed(self, text: str) -> list[float]:  # noqa: ARG002
+        return [0.0] * self.embedding_dimension
+
+    async def chat(
+        self,
+        messages: list[ChatMessage],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> str:
+        return "Fake LLM response"
+
+    async def extract_structured(
+        self,
+        *,
+        system_prompt: str,  # noqa: ARG002
+        user_text: str | None,  # noqa: ARG002
+        image_bytes_list: list[bytes],  # noqa: ARG002
+        json_schema: dict[str, Any],  # noqa: ARG002
+        model: str | None = None,  # noqa: ARG002
+        temperature: float = 0.0,  # noqa: ARG002
+    ) -> tuple[dict[str, Any], int, int]:
+        self.extract_call_count += 1
+        if isinstance(self.extraction_return_value, Exception):
+            raise self.extraction_return_value
+        return dict(self.extraction_return_value), 100, 200
 
 
 @pytest_asyncio.fixture
@@ -104,16 +166,24 @@ async def test_user(session: AsyncSession) -> None:
     await session.commit()
 
 
+@pytest.fixture
+def fake_ai_provider() -> FakeAIProvider:
+    """Frische FakeAIProvider-Instanz pro Test."""
+    return FakeAIProvider()
+
+
 @pytest_asyncio.fixture
 async def client(
     session: AsyncSession,
     tmp_path: pathlib.Path,
     test_user: None,  # noqa: ARG001
+    fake_ai_provider: FakeAIProvider,
 ) -> AsyncGenerator[AsyncClient, None]:
     """HTTP-Client gegen die App, mit Dependency-Overrides fuer Session und FileStorage.
 
     tmp_path stellt sicher, dass jeder Test sein eigenes isoliertes Datei-Verzeichnis
     bekommt - keine Datei-Leaks zwischen Tests.
+    G2.1: get_ai_provider wird auf FakeAIProvider umgeleitet (kein echter API-Call).
     """
 
     async def _override_get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -122,8 +192,12 @@ async def client(
     def _override_get_file_storage() -> LocalFilesystemStorage:
         return LocalFilesystemStorage(base_dir=str(tmp_path / "invoice-files"))
 
+    def _override_get_ai_provider() -> FakeAIProvider:
+        return fake_ai_provider
+
     app.dependency_overrides[get_session] = _override_get_session
     app.dependency_overrides[get_file_storage] = _override_get_file_storage
+    app.dependency_overrides[get_ai_provider] = _override_get_ai_provider
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

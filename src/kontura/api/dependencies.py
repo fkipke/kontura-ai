@@ -25,6 +25,8 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from kontura.ai.base import AIProvider
+from kontura.ai.factory import get_ai_provider
 from kontura.core.jwt import TokenError, TokenPayload, decode_token
 from kontura.core.tenant import TenantContext, current_tenant_var
 from kontura.infra.storage import LocalFilesystemStorage
@@ -95,3 +97,4 @@ def get_file_storage() -> LocalFilesystemStorage:
 TenantDep = Annotated[TenantContext, Depends(get_tenant)]
 TokenDep = Annotated[TokenPayload, Depends(get_token_payload)]
 FileStorageDep = Annotated[LocalFilesystemStorage, Depends(get_file_storage)]
+AIProviderDep = Annotated[AIProvider, Depends(get_ai_provider)]

@@ -11,6 +11,11 @@ Verteidigungslinie, kein Single-Point-of-Failure.
 Tenant-Propagation: Der aktive Tenant wird per ContextVar gelesen
 (siehe core.tenant.current_tenant_var). Damit muss kein einziger Aufrufer
 seinen Tenant durch die Provider-Signatur durchschleifen.
+
+G2.1-Erweiterung: extract_structured() wird ebenfalls ge-auditet.
+Hinweis zu Image-Bytes: Diese werden NICHT im prompt_text gespeichert
+(weder b64 noch raw). Nur System-Prompt und user_text werden maskiert und
+im Audit festgehalten. Bild-Inhalte sind fluechtiger Kontext, kein PII-Text.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from typing import Any
 
 from kontura.ai.audit.repository import AuditRepository
 from kontura.ai.base import AIProvider, ChatMessage
@@ -125,6 +131,66 @@ class AuditedAIProvider:
                 error_message=error_message,
             )
 
+    async def extract_structured(
+        self,
+        *,
+        system_prompt: str,
+        user_text: str | None,
+        image_bytes_list: list[bytes],
+        json_schema: dict[str, Any],
+        model: str | None = None,
+        temperature: float = 0.0,
+    ) -> tuple[dict[str, Any], int, int]:
+        """Delegiert an den wrapped Provider und schreibt einen Audit-Eintrag.
+
+        PII-Masking: system_prompt und user_text werden maskiert.
+        Image-Bytes werden NICHT im Audit gespeichert (nur Metadaten: Anzahl Seiten).
+        """
+        masked_system = self._masker.mask(system_prompt).masked_text
+        masked_user = self._masker.mask(user_text).masked_text if user_text else ""
+
+        prompt_summary = json.dumps(
+            {
+                "system": masked_system,
+                "user_text": masked_user,
+                "image_pages": len(image_bytes_list),
+            },
+            ensure_ascii=False,
+        )
+        prompt_chars = len(system_prompt) + len(user_text or "")
+
+        start = time.perf_counter()
+        success = True
+        error_message: str | None = None
+        prompt_tokens = 0
+        completion_tokens = 0
+        try:
+            result_dict, prompt_tokens, completion_tokens = await self._wrapped.extract_structured(
+                system_prompt=system_prompt,
+                user_text=user_text,
+                image_bytes_list=image_bytes_list,
+                json_schema=json_schema,
+                model=model,
+                temperature=temperature,
+            )
+            return result_dict, prompt_tokens, completion_tokens
+        except Exception as exc:
+            success = False
+            error_message = f"{type(exc).__name__}: {exc}"
+            raise
+        finally:
+            duration_ms = int((time.perf_counter() - start) * 1000)
+            await self._record(
+                operation="extract",
+                model=model or self._vision_model_name(),
+                prompt_text=prompt_summary,
+                prompt_chars=prompt_tokens or prompt_chars,
+                response_chars=completion_tokens,
+                duration_ms=duration_ms,
+                success=success,
+                error_message=error_message,
+            )
+
     # ----- Helpers -----
 
     async def _record(
@@ -162,3 +228,6 @@ class AuditedAIProvider:
 
     def _chat_model_name(self) -> str:
         return getattr(self._wrapped, "_chat_model", "unknown")
+
+    def _vision_model_name(self) -> str:
+        return getattr(self._wrapped, "_vision_model", "unknown")
