@@ -24,14 +24,14 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from kontura.ai.base import AIProvider
 from kontura.ai.factory import get_ai_provider
 from kontura.core.jwt import TokenError, TokenPayload, decode_token
 from kontura.core.tenant import TenantContext, current_tenant_var
-from kontura.infra.storage import LocalFilesystemStorage
-from sqlalchemy.ext.asyncio import AsyncEngine
 from kontura.infra.db import engine as _module_engine
+from kontura.infra.storage import LocalFilesystemStorage
 
 # HTTPBearer macht aus 'Authorization: Bearer ...' automatisch ein Credentials-Object.
 # auto_error=False, damit WIR die Fehlermeldung kontrollieren (klare 401-Texte).
