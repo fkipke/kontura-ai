@@ -75,12 +75,16 @@ class InvoiceFile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     # Status der KI-Extraktion (State-Machine: pending -> processing -> completed|failed)
     extraction_status: Mapped[ExtractionStatus] = mapped_column(
-        SAEnum(ExtractionStatus, name="extraction_status"),
+        SAEnum(
+            ExtractionStatus,
+            name="extraction_status",
+            values_callable=lambda enum_cls: [m.value for m in enum_cls],
+        ),
         nullable=False,
         default=ExtractionStatus.PENDING,
         server_default=ExtractionStatus.PENDING.value,
     )
-
+    
     # Vollstaendiges extrahiertes JSON-Objekt (JSONB fuer effiziente Queries)
     extraction_result: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
 
