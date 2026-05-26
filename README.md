@@ -6,6 +6,8 @@
 
 > KI-gestützte Rechnungsverarbeitung und Auto-Buchung für SAP FI und DATEV.
 
+Die neue Next.js-Frontend-Basis (Sprint G3.1) liegt im Verzeichnis [`frontend/`](frontend/) und enthält Auth-Flow, geschützte Dashboard-Routen, Upload-/Status-UI für Rechnungen und die Detailansicht mit PDF-Vorschau.
+
 **Status:** In aktiver Entwicklung — MVP geplant für Q2 2026.
 
 ---
