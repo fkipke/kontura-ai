@@ -30,6 +30,9 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi import (
+    Response as FastAPIResponse,
+)
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -279,6 +282,7 @@ async def list_invoice_files(
 @limiter.limit(settings.rate_limit_llm_per_tenant)
 async def trigger_extraction(
     request: Request,  # noqa: ARG001 - von slowapi benoetigt
+    response: FastAPIResponse,
     file_id: uuid.UUID,
     tenant: TenantDep,
     session: SessionDep,
@@ -322,6 +326,7 @@ async def trigger_extraction(
 @limiter.limit(settings.rate_limit_default_per_tenant)
 async def get_extraction_status(
     request: Request,  # noqa: ARG001 - von slowapi benoetigt
+    response: FastAPIResponse,
     file_id: uuid.UUID,
     tenant: TenantDep,
     session: SessionDep,
