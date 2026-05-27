@@ -52,6 +52,12 @@ export const invoiceFileSchema = z.object({
   created_at: z.string(),
   deduplicated: z.boolean().optional(),
   extraction_status: invoiceStatusSchema,
+  // G3.1b: Denormalisierte Extraction-Felder fuer Listings (n+1 vermeiden).
+  // Werden nur befuellt, wenn extraction_status == "completed".
+  vendor_name: z.string().nullable().optional(),
+  invoice_date: z.string().nullable().optional(),
+  total_amount: z.union([z.string(), z.number()]).nullable().optional(),
+  currency: z.string().nullable().optional(),
 });
 
 export const extractionLineItemSchema = z.object({

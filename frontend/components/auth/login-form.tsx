@@ -15,7 +15,7 @@ import { useLogin } from "@/lib/api/auth";
 const loginSchema = z.object({
   email: z.string().email("Bitte gib eine gültige E-Mail-Adresse ein."),
   password: z.string().min(1, "Passwort ist erforderlich."),
-  tenant_slug: z.string().min(2, "Mandant ist erforderlich."),
+  tenant_slug: z.string().min(2, "Firmen-Kennung ist erforderlich."),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -62,7 +62,7 @@ export function LoginForm(): React.JSX.Element {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="login-tenant">Tenant-Slug</Label>
+        <Label htmlFor="login-tenant">Firmen-Kennung</Label>
         <Input id="login-tenant" autoComplete="organization" {...form.register("tenant_slug")} />
         {form.formState.errors.tenant_slug && (
           <p className="text-xs text-destructive">{form.formState.errors.tenant_slug.message}</p>

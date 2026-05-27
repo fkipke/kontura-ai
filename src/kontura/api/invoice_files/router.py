@@ -132,6 +132,7 @@ async def _run_extraction_in_background(
 @limiter.limit(settings.rate_limit_default_per_tenant)
 async def upload_invoice_file(
     request: Request,  # noqa: ARG001 - von slowapi benoetigt
+    response: Response,  # noqa: ARG001 - von slowapi benoetigt (Header-Injection)
     file: UploadFile,
     tenant: TenantDep,
     token: TokenDep,
@@ -184,7 +185,7 @@ async def upload_invoice_file(
     existing = await repo.get_by_sha256(tenant, sha256)
     if existing is not None:
         log.info("invoice_file_deduplicated", file_id=str(existing.id))
-        response_body = InvoiceFileResponse.model_validate(existing)
+        response_body = InvoiceFileResponse.from_model(existing)
         response_body = response_body.model_copy(update={"deduplicated": True})
         return Response(
             content=response_body.model_dump_json(),
@@ -227,7 +228,7 @@ async def upload_invoice_file(
         storage,
     )
 
-    response_body = InvoiceFileResponse.model_validate(invoice_file)
+    response_body = InvoiceFileResponse.from_model(invoice_file)
     return Response(
         content=response_body.model_dump_json(),
         status_code=status.HTTP_201_CREATED,
@@ -244,6 +245,7 @@ async def upload_invoice_file(
 @limiter.limit(settings.rate_limit_default_per_tenant)
 async def list_invoice_files(
     request: Request,  # noqa: ARG001 - von slowapi benoetigt
+    response: Response,  # noqa: ARG001 - von slowapi benoetigt (Header-Injection)
     tenant: TenantDep,
     session: SessionDep,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -254,7 +256,7 @@ async def list_invoice_files(
     files = await repo.list_all(tenant, limit=limit, offset=offset)
     total = await repo.count_all(tenant)
 
-    response_items = [InvoiceFileResponse.model_validate(f) for f in files]
+    response_items = [InvoiceFileResponse.from_model(f) for f in files]
     body = json.dumps([item.model_dump(mode="json") for item in response_items], default=str)
     return Response(
         content=body,
@@ -279,6 +281,7 @@ async def list_invoice_files(
 @limiter.limit(settings.rate_limit_llm_per_tenant)
 async def trigger_extraction(
     request: Request,  # noqa: ARG001 - von slowapi benoetigt
+    response: Response,  # noqa: ARG001 - von slowapi benoetigt (Header-Injection)
     file_id: uuid.UUID,
     tenant: TenantDep,
     session: SessionDep,
@@ -322,6 +325,7 @@ async def trigger_extraction(
 @limiter.limit(settings.rate_limit_default_per_tenant)
 async def get_extraction_status(
     request: Request,  # noqa: ARG001 - von slowapi benoetigt
+    response: Response,  # noqa: ARG001 - von slowapi benoetigt (Header-Injection)
     file_id: uuid.UUID,
     tenant: TenantDep,
     session: SessionDep,
@@ -356,6 +360,7 @@ async def get_extraction_status(
 @limiter.limit(settings.rate_limit_default_per_tenant)
 async def get_invoice_file(
     request: Request,  # noqa: ARG001 - von slowapi benoetigt
+    response: Response,  # noqa: ARG001 - von slowapi benoetigt (Header-Injection)
     file_id: uuid.UUID,
     tenant: TenantDep,
     session: SessionDep,
