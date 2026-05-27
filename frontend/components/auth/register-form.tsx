@@ -15,8 +15,11 @@ import { useRegister } from "@/lib/api/auth";
 const registerSchema = z.object({
   email: z.string().email("Bitte gib eine gültige E-Mail-Adresse ein."),
   password: z.string().min(12, "Das Passwort muss mindestens 12 Zeichen haben."),
-  tenant_slug: z.string().min(2, "Tenant-Slug ist erforderlich."),
-  tenant_display_name: z.string().min(1, "Mandantenname ist erforderlich."),
+  tenant_slug: z
+    .string()
+    .min(2, "Firmen-Kennung ist erforderlich.")
+    .regex(/^[a-z0-9-]+$/, "Nur Kleinbuchstaben, Zahlen und Bindestriche erlaubt."),
+  tenant_display_name: z.string().min(1, "Firmenname ist erforderlich."),
 });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
@@ -56,12 +59,21 @@ export function RegisterForm(): React.JSX.Element {
         <Input id="register-password" type="password" autoComplete="new-password" {...form.register("password")} />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="register-tenant">Tenant-Slug</Label>
+        <Label htmlFor="register-tenant">Firmen-Kennung</Label>
         <Input id="register-tenant" autoComplete="organization" {...form.register("tenant_slug")} />
+        <p className="text-xs text-muted-foreground">
+          Kurzname für die URL — nur Kleinbuchstaben, Zahlen und Bindestriche (mind. 2 Zeichen). Beispiel: meine-firma
+        </p>
+        {form.formState.errors.tenant_slug && (
+          <p className="text-xs text-destructive">{form.formState.errors.tenant_slug.message}</p>
+        )}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="register-name">Mandantenname</Label>
-        <Input id="register-name" {...form.register("tenant_display_name")} />
+        <Label htmlFor="register-name">Firmenname</Label>
+        <Input id="register-name" placeholder="Meine Firma GmbH" {...form.register("tenant_display_name")} />
+        {form.formState.errors.tenant_display_name && (
+          <p className="text-xs text-destructive">{form.formState.errors.tenant_display_name.message}</p>
+        )}
       </div>
 
       {form.formState.errors.root?.message && (

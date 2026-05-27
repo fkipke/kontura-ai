@@ -5,11 +5,15 @@ const EUR_FORMATTER = new Intl.NumberFormat("de-DE", {
   maximumFractionDigits: 2,
 });
 
-export function formatCurrency(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) {
+export function formatCurrency(value: string | number | null | undefined): string {
+  if (value == null) {
     return "–";
   }
-  return EUR_FORMATTER.format(value);
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  if (Number.isNaN(num)) {
+    return "–";
+  }
+  return EUR_FORMATTER.format(num);
 }
 
 export function formatGermanDate(input: string | null | undefined): string {

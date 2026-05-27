@@ -191,3 +191,146 @@ async def test_extraction_result_contains_expected_fields(
     assert data["attempts"] >= 1
     assert data["extracted_at"] is not None
     assert data["error"] is None
+
+
+# =============================================================================
+# G3.1b Bug #1 — slowapi Response-Param-Fix: GET /extraction darf nicht 500 geben
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_extraction_status_returns_200_not_500(
+    client: AsyncClient,
+    fake_ai_provider: FakeAIProvider,
+) -> None:
+    """GET /extraction gibt 200 zurueck — nicht 500 (slowapi Response-Param-Fix).
+
+    Prueft:
+    1. Status 200 (kein Crash durch fehlenden Response-Parameter)
+    2. JSON-Body enthaelt 'status'-Feld
+    """
+    # Upload + force-extract um sicherzustellen, dass die Datei existiert
+    resp = await client.post(
+        BASE_URL,
+        files={"file": ("slowapi_test.png", io.BytesIO(_PNG_BYTES + b"\xff"), "image/png")},
+        headers=HEADERS_A,
+    )
+    assert resp.status_code == 201
+    file_id = resp.json()["id"]
+
+    # Force-Extract damit Datei im System ist
+    await client.post(f"{BASE_URL}/{file_id}/extract?force=true", headers=HEADERS_A)
+
+    # GET /extraction — darf nicht 500 geben
+    status_resp = await client.get(f"{BASE_URL}/{file_id}/extraction", headers=HEADERS_A)
+    assert status_resp.status_code == 200, (
+        f"Erwartet 200, bekam {status_resp.status_code}: {status_resp.text}"
+    )
+    body = status_resp.json()
+    assert "status" in body
+
+
+# =============================================================================
+# G3.1b Bug #3 — Denormalisierte Extraction-Felder im Listing
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_listing_with_completed_extraction_contains_denormalized_fields(
+    client: AsyncClient,
+    fake_ai_provider: FakeAIProvider,
+) -> None:
+    """Listing enthaelt vendor_name, invoice_date, total_amount, currency bei 'completed'."""
+    resp = await client.post(
+        BASE_URL,
+        files={"file": ("listing_completed.png", io.BytesIO(_PNG_BYTES + b"\x01"), "image/png")},
+        headers=HEADERS_A,
+    )
+    assert resp.status_code == 201
+    file_id = resp.json()["id"]
+
+    # Force-Extract damit Status 'completed'
+    await client.post(f"{BASE_URL}/{file_id}/extract?force=true", headers=HEADERS_A)
+
+    # Listing abrufen
+    list_resp = await client.get(BASE_URL, headers=HEADERS_A)
+    assert list_resp.status_code == 200
+
+    items = list_resp.json()
+    target = next((item for item in items if item["id"] == file_id), None)
+    assert target is not None, "Datei nicht im Listing gefunden"
+
+    assert target["extraction_status"] == "completed"
+    assert target["vendor_name"] == "Test GmbH"
+    assert target["invoice_date"] == "2024-01-15"
+    assert target["total_amount"] == "119.00"
+    assert target["currency"] == "EUR"
+
+
+@pytest.mark.asyncio
+async def test_listing_with_pending_extraction_has_none_denormalized_fields(
+    client: AsyncClient,
+) -> None:
+    """Listing mit extraction_status 'pending' hat None fuer alle Extraction-Felder.
+
+    Prueft dass Upload-Response (vor BG-Task) die Felder korrekt als None liefert.
+    """
+    # Upload-Response wird VOR dem BG-Task-Lauf gebaut → Status ist 'pending'
+    resp = await client.post(
+        BASE_URL,
+        files={"file": ("listing_pending.png", io.BytesIO(_PNG_BYTES + b"\x02"), "image/png")},
+        headers=HEADERS_A,
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+
+    # Upload-Response: extraction_status ist 'pending', Felder muessen None sein
+    assert body["extraction_status"] == "pending"
+    assert body["vendor_name"] is None
+    assert body["invoice_date"] is None
+    assert body["total_amount"] is None
+    assert body["currency"] is None
+
+
+def test_listing_with_broken_extraction_result_does_not_crash() -> None:
+    """Kaputtes extraction_result (unparsebare Felder) in der DB crasht from_model nicht.
+
+    Simuliert einen DB-Eintrag mit teilweise unparseabaren Feldern (z.B. Legacy-Daten).
+    Felder mit Parse-Fehler werden zu None — kein 500.
+    """
+    import uuid
+    from unittest.mock import MagicMock
+
+    from kontura.api.invoice_files.schemas import InvoiceFileResponse
+    from kontura.infra.models.invoice_file import ExtractionStatus
+
+    # Mock eines InvoiceFile-ORM-Objekts mit kaputten Feldern
+    mock_file = MagicMock()
+    mock_file.id = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    mock_file.filename = "broken.png"
+    mock_file.mime_type = "image/png"
+    mock_file.size_bytes = 100
+    mock_file.sha256 = "aabbcc" * 10 + "aa"  # 64 Zeichen
+    mock_file.created_at = __import__("datetime").datetime(2024, 1, 1)
+    mock_file.deduplicated = False
+    mock_file.extraction_status = ExtractionStatus.COMPLETED
+    # Neue denormalisierte Felder — auf None setzen, damit model_validate() nicht crasht
+    mock_file.vendor_name = None
+    mock_file.invoice_date = None
+    mock_file.total_amount = None
+    mock_file.currency = None
+    mock_file.extraction_result = {
+        "vendor_name": "Broken GmbH",
+        "invoice_date": "not-a-date",    # kaputt
+        "total_amount": "not-a-number",  # kaputt
+        "currency": "EUR",
+    }
+
+    # from_model darf nicht crashen — kaputte Felder → None
+    result = InvoiceFileResponse.from_model(mock_file)
+
+    assert result.extraction_status == ExtractionStatus.COMPLETED
+    assert result.vendor_name == "Broken GmbH"
+    assert result.invoice_date is None    # kaputt → None
+    assert result.total_amount is None    # kaputt → None
+    assert result.currency == "EUR"
