@@ -30,7 +30,7 @@ class AuthService:
         *,
         email_verification_token_hash: str,
         email_verification_expires_at: datetime,
-        email_verification_sent_at: datetime,
+        email_verification_sent_at: datetime | None,
     ) -> User:
         """Legt Tenant + ersten Admin-User an.
 
