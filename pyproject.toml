@@ -9,6 +9,7 @@ authors = [
 ]
 license = { text = "MIT" }
 dependencies = [
+    "aiosmtplib>=3.0",
     "aiofiles>=25.1.0",
     "alembic>=1.18.4",
     "asyncpg>=0.31.0",

@@ -3,12 +3,22 @@ import { NextResponse } from "next/server";
 import { readAuthToken } from "@/lib/auth/cookies";
 import { config } from "@/lib/config";
 
+function isPublicProxyTarget(path: string[]): boolean {
+  const target = `/${path.join("/")}`;
+  return (
+    target === "/api/v1/auth/verify-email" ||
+    target === "/api/v1/auth/resend-verification"
+  );
+}
+
 async function forward(
   request: Request,
   params: Promise<{ path: string[] }>,
 ): Promise<NextResponse> {
   const token = await readAuthToken();
-  if (!token) {
+  const { path } = await params;
+
+  if (!token && !isPublicProxyTarget(path)) {
     return NextResponse.json(
       {
         type: "about:blank",
@@ -20,12 +30,15 @@ async function forward(
     );
   }
 
-  const { path } = await params;
   const inputUrl = new URL(request.url);
   const target = `${config.apiBaseUrl}/${path.join("/")}${inputUrl.search}`;
 
   const headers = new Headers(request.headers);
-  headers.set("Authorization", `Bearer ${token}`);
+  if (token) {
+    headers.set("Authorization", "Bearer " + token);
+  } else {
+    headers.delete("Authorization");
+  }
   headers.delete("host");
 
   const body =

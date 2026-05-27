@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { config as appConfig } from "@/lib/config";
 
-const PUBLIC_ROUTES = ["/login", "/register"];
+const PUBLIC_ROUTES = ["/login", "/register", "/verify-email"];
 
 function isPublicRoute(pathname: string): boolean {
   return PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));

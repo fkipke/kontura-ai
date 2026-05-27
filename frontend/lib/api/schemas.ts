@@ -7,6 +7,7 @@ export const problemDetailSchema = z.object({
   detail: z.string().optional(),
   instance: z.string().optional(),
   request_id: z.string().optional(),
+  code: z.string().optional(),
   errors: z.array(z.record(z.string(), z.unknown())).optional(),
 });
 
@@ -14,6 +15,19 @@ export const tokenResponseSchema = z.object({
   access_token: z.string(),
   token_type: z.string(),
   expires_in_seconds: z.number().int().positive(),
+});
+
+export const registerResponseSchema = z.object({
+  email_verification_required: z.boolean(),
+});
+
+export const verifyEmailResponseSchema = z.object({
+  verified: z.boolean().optional(),
+  already_verified: z.boolean().optional(),
+});
+
+export const resendVerificationResponseSchema = z.object({
+  sent: z.boolean(),
 });
 
 export const loginPayloadSchema = z.object({
@@ -98,3 +112,6 @@ export type InvoiceFile = z.infer<typeof invoiceFileSchema>;
 export type ExtractionStatus = z.infer<typeof extractionStatusSchema>;
 export type InvoiceStatus = z.infer<typeof invoiceStatusSchema>;
 export type MeResponse = z.infer<typeof meResponseSchema>;
+export type RegisterResponse = z.infer<typeof registerResponseSchema>;
+export type VerifyEmailResponse = z.infer<typeof verifyEmailResponseSchema>;
+export type ResendVerificationResponse = z.infer<typeof resendVerificationResponseSchema>;

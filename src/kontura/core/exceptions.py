@@ -51,6 +51,12 @@ class ForbiddenError(KonturaError):
     """
 
 
+class EmailNotVerifiedError(ForbiddenError):
+    """Login blockiert, bis die E-Mail-Adresse bestaetigt wurde."""
+
+    code = "email_not_verified"
+
+
 class UnauthorizedError(KonturaError):
     """User ist NICHT authentifiziert (Token fehlt/ungueltig).
 

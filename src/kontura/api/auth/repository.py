@@ -6,6 +6,8 @@ der Auth-Layer ist die einzige Stelle, an der wir tenant-uebergreifend lesen.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,13 +51,25 @@ class UserRepository:
         email: str,
         password_hash: str,
         full_name: str | None,
+        email_verification_token_hash: str | None = None,
+        email_verification_expires_at: datetime | None = None,
+        email_verification_sent_at: datetime | None = None,
+        email_verified_at: datetime | None = None,
     ) -> User:
         user = User(
             tenant_id=tenant_id,
             email=email,
             password_hash=password_hash,
             full_name=full_name,
+            email_verification_token_hash=email_verification_token_hash,
+            email_verification_expires_at=email_verification_expires_at,
+            email_verification_sent_at=email_verification_sent_at,
+            email_verified_at=email_verified_at,
         )
         self._session.add(user)
         await self._session.flush()
         return user
+
+    async def get_by_verification_token_hash(self, token_hash: str) -> User | None:
+        stmt = select(User).where(User.email_verification_token_hash == token_hash)
+        return (await self._session.execute(stmt)).scalar_one_or_none()
