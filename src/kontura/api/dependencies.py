@@ -28,9 +28,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from kontura.ai.base import AIProvider
 from kontura.ai.factory import get_ai_provider
+from kontura.core.config import settings
 from kontura.core.jwt import TokenError, TokenPayload, decode_token
 from kontura.core.tenant import TenantContext, current_tenant_var
 from kontura.infra.db import engine as _module_engine
+from kontura.infra.email import ConsoleEmailSender, EmailSender, SmtpEmailSender
 from kontura.infra.storage import LocalFilesystemStorage
 
 # HTTPBearer macht aus 'Authorization: Bearer ...' automatisch ein Credentials-Object.
@@ -107,8 +109,22 @@ def get_db_engine() -> AsyncEngine:
     return _module_engine
 
 
+@lru_cache(maxsize=1)
+def get_email_sender() -> EmailSender:
+    """Singleton-Instanz fuer den E-Mail-Versand."""
+    if settings.email_backend == "smtp":
+        if (
+            settings.smtp_host is not None
+            and settings.smtp_user is not None
+            and settings.smtp_password is not None
+        ):
+            return SmtpEmailSender()
+    return ConsoleEmailSender()
+
+
 TenantDep = Annotated[TenantContext, Depends(get_tenant)]
 TokenDep = Annotated[TokenPayload, Depends(get_token_payload)]
 FileStorageDep = Annotated[LocalFilesystemStorage, Depends(get_file_storage)]
 AIProviderDep = Annotated[AIProvider, Depends(get_ai_provider)]
 EngineDep = Annotated[AsyncEngine, Depends(get_db_engine)]
+EmailSenderDep = Annotated[EmailSender, Depends(get_email_sender)]

@@ -20,6 +20,8 @@ os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 import pathlib
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -37,7 +39,7 @@ from sqlalchemy.pool import NullPool
 import kontura.infra.models  # noqa: F401  # registriert ALLE Modelle bei Base.metadata
 from kontura.ai.base import ChatMessage
 from kontura.ai.factory import get_ai_provider
-from kontura.api.dependencies import get_file_storage
+from kontura.api.dependencies import get_email_sender, get_file_storage
 from kontura.core.jwt import encode_token
 from kontura.infra.db import Base, get_session
 from kontura.infra.models.user import User
@@ -71,6 +73,32 @@ VALID_EXTRACTION_RESULT: dict[str, Any] = {
     "line_items": [],
     "confidence_notes": None,
 }
+
+
+@dataclass
+class SentEmail:
+    to: str
+    subject: str
+    body_text: str
+    body_html: str | None
+
+
+class FakeEmailSender:
+    """Sammelt versendete E-Mails fuer Assertions in Tests."""
+
+    def __init__(self) -> None:
+        self.sent_emails: list[SentEmail] = []
+
+    async def send(
+        self,
+        to: str,
+        subject: str,
+        body_text: str,
+        body_html: str | None = None,
+    ) -> None:
+        self.sent_emails.append(
+            SentEmail(to=to, subject=subject, body_text=body_text, body_html=body_html)
+        )
 
 
 class FakeAIProvider:
@@ -154,12 +182,14 @@ async def test_user(session: AsyncSession) -> None:
                 tenant_id="acme-corp",
                 email="test@example.com",
                 password_hash="$2b$12$dummy.hash.for.tests.only.not.real.bcrypt",
+                email_verified_at=datetime.now(tz=UTC),
             ),
             User(
                 id=uuid.UUID(TEST_USER_IDS_BY_TENANT["other-corp"]),
                 tenant_id="other-corp",
                 email="other@example.com",
                 password_hash="$2b$12$dummy.hash.for.tests.only.not.real.bcrypt",
+                email_verified_at=datetime.now(tz=UTC),
             ),
         ]
     )
@@ -172,12 +202,18 @@ def fake_ai_provider() -> FakeAIProvider:
     return FakeAIProvider()
 
 
+@pytest.fixture
+def fake_email_sender() -> FakeEmailSender:
+    return FakeEmailSender()
+
+
 @pytest_asyncio.fixture
 async def client(
     session: AsyncSession,
     tmp_path: pathlib.Path,
     test_user: None,  # noqa: ARG001
     fake_ai_provider: FakeAIProvider,
+    fake_email_sender: FakeEmailSender,
 ) -> AsyncGenerator[AsyncClient, None]:
     """HTTP-Client gegen die App, mit Dependency-Overrides fuer Session und FileStorage.
 
@@ -195,9 +231,13 @@ async def client(
     def _override_get_ai_provider() -> FakeAIProvider:
         return fake_ai_provider
 
+    def _override_get_email_sender() -> FakeEmailSender:
+        return fake_email_sender
+
     app.dependency_overrides[get_session] = _override_get_session
     app.dependency_overrides[get_file_storage] = _override_get_file_storage
     app.dependency_overrides[get_ai_provider] = _override_get_ai_provider
+    app.dependency_overrides[get_email_sender] = _override_get_email_sender
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

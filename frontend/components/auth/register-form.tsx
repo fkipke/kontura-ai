@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiClientError } from "@/lib/api/client";
-import { useRegister } from "@/lib/api/auth";
+import { useRegister, useResendVerification } from "@/lib/api/auth";
 
 const registerSchema = z.object({
   email: z.string().email("Bitte gib eine gültige E-Mail-Adresse ein."),
@@ -25,8 +25,10 @@ const registerSchema = z.object({
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export function RegisterForm(): React.JSX.Element {
-  const router = useRouter();
   const mutation = useRegister();
+  const resendMutation = useResendVerification();
+  const [submitted, setSubmitted] = useState(false);
+  const [submittedEmail, setSubmittedEmail] = useState("");
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -39,14 +41,53 @@ export function RegisterForm(): React.JSX.Element {
   });
 
   const inlineError = mutation.error instanceof ApiClientError ? mutation.error.detail : null;
+  const resendError = resendMutation.error instanceof ApiClientError ? resendMutation.error.detail : null;
+
+  if (submitted) {
+    return (
+      <div className="space-y-4">
+        <p className="rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm">
+          Wir haben dir eine E-Mail an <strong>{submittedEmail}</strong> geschickt. Bitte öffne den Link in der Mail,
+          um dein Konto zu aktivieren.
+        </p>
+        <Button
+          className="w-full"
+          type="button"
+          variant="outline"
+          disabled={resendMutation.isPending}
+          onClick={async () => {
+            await resendMutation.mutateAsync({
+              email: submittedEmail,
+              tenant_slug: form.getValues("tenant_slug"),
+            });
+          }}
+        >
+          {resendMutation.isPending ? "Link wird gesendet…" : "Keine Mail erhalten? Erneut senden"}
+        </Button>
+        {resendMutation.isSuccess && <p className="text-sm text-green-600">Neuer Verifikationslink wurde gesendet.</p>}
+        {resendError && (
+          <p className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-sm text-destructive">
+            {resendError}
+          </p>
+        )}
+        <p className="text-sm text-muted-foreground">
+          <Link className="text-primary hover:underline" href="/login">
+            Zur Anmeldung
+          </Link>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <form
       className="space-y-4"
       onSubmit={form.handleSubmit(async (values) => {
-        await mutation.mutateAsync(values);
-        router.replace("/");
-        router.refresh();
+        const response = await mutation.mutateAsync(values);
+        if (response.email_verification_required) {
+          setSubmittedEmail(values.email);
+          setSubmitted(true);
+        }
       })}
       noValidate
     >

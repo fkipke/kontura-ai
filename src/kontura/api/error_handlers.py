@@ -22,6 +22,7 @@ from kontura.api.middleware import REQUEST_ID_HEADER
 from kontura.core.exceptions import (
     ConflictError,
     DomainValidationError,
+    EmailNotVerifiedError,
     ForbiddenError,
     KonturaError,
     NotFoundError,
@@ -90,6 +91,9 @@ def register_exception_handlers(app: FastAPI) -> None:
                     status_code=status_code,
                     title=title,
                     detail=str(exc),
+                    extra={"code": "email_not_verified"}
+                    if isinstance(exc, EmailNotVerifiedError)
+                    else None,
                 )
         # Unbekannte KonturaError-Subklasse - sollte nie passieren, aber sicher ist sicher.
         logger.exception("unmapped_domain_error", error_class=type(exc).__name__)

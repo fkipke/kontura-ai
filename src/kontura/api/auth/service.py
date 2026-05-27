@@ -8,9 +8,11 @@ Senior-Pattern: Service kapselt Business-Regeln, Repository nur DB-Zugriff.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from kontura.api.auth.repository import TenantRepository, UserRepository
 from kontura.api.auth.schemas import LoginRequest, RegisterRequest
-from kontura.core.exceptions import ConflictError, UnauthorizedError
+from kontura.core.exceptions import ConflictError, EmailNotVerifiedError, UnauthorizedError
 from kontura.core.security import hash_password, verify_password
 from kontura.infra.models import User
 
@@ -22,7 +24,14 @@ class AuthService:
         self._tenants = tenant_repo
         self._users = user_repo
 
-    async def register(self, payload: RegisterRequest) -> User:
+    async def register(
+        self,
+        payload: RegisterRequest,
+        *,
+        email_verification_token_hash: str,
+        email_verification_expires_at: datetime,
+        email_verification_sent_at: datetime,
+    ) -> User:
         """Legt Tenant + ersten Admin-User an.
 
         Raises:
@@ -42,6 +51,9 @@ class AuthService:
             email=payload.email,
             password_hash=hash_password(payload.password),
             full_name=payload.full_name,
+            email_verification_token_hash=email_verification_token_hash,
+            email_verification_expires_at=email_verification_expires_at,
+            email_verification_sent_at=email_verification_sent_at,
         )
         return user
 
@@ -60,4 +72,9 @@ class AuthService:
         )
         if user is None or not verify_password(payload.password, user.password_hash):
             raise UnauthorizedError("Email oder Passwort ungueltig.")
+        if user.email_verified_at is None:
+            raise EmailNotVerifiedError(
+                "E-Mail-Adresse noch nicht bestätigt. Bitte prüfe dein Postfach "
+                "oder fordere einen neuen Verifikationslink an."
+            )
         return user

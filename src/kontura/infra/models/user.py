@@ -1,6 +1,8 @@
 """User-Modell: ein User gehoert zu genau einem Tenant."""
 
-from sqlalchemy import String, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import DateTime, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from kontura.infra.db import Base
@@ -28,6 +30,19 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     # Anzeigename, optional
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    email_verification_token_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    email_verification_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    email_verification_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),)
 

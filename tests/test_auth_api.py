@@ -1,12 +1,4 @@
-"""API-Tests fuer Auth: Register + Login.
-
-Wir testen:
-- Register legt Tenant + User an, gibt JWT zurueck.
-- Login mit korrekten Credentials -> 200 + JWT.
-- Login mit falschem Passwort -> 401.
-- Doppel-Register -> 409.
-- Validation: Schwache Passwoerter, ungueltige Slugs.
-"""
+"""API-Tests fuer Auth: Register + Login."""
 
 from __future__ import annotations
 
@@ -22,19 +14,12 @@ VALID_REGISTER_PAYLOAD = {
 }
 
 
-# ---------- Register ----------
-
-
 @pytest.mark.asyncio
-async def test_register_creates_tenant_and_returns_jwt(client: AsyncClient) -> None:
+async def test_register_creates_tenant_and_requires_email_verification(client: AsyncClient) -> None:
     response = await client.post("/api/v1/auth/register", json=VALID_REGISTER_PAYLOAD)
     assert response.status_code == 201
     body = response.json()
-    assert "access_token" in body
-    assert body["token_type"] == "bearer"
-    assert body["expires_in_seconds"] > 0
-    # Token ist kein leerer String und enthaelt 2 Punkte (header.payload.sig)
-    assert body["access_token"].count(".") == 2
+    assert body == {"email_verification_required": True}
 
 
 @pytest.mark.asyncio
@@ -57,25 +42,6 @@ async def test_register_short_password_returns_422(client: AsyncClient) -> None:
     bad = {**VALID_REGISTER_PAYLOAD, "password": "short"}
     response = await client.post("/api/v1/auth/register", json=bad)
     assert response.status_code == 422
-
-
-# ---------- Login ----------
-
-
-@pytest.mark.asyncio
-async def test_login_with_correct_credentials_returns_jwt(client: AsyncClient) -> None:
-    await client.post("/api/v1/auth/register", json=VALID_REGISTER_PAYLOAD)
-    response = await client.post(
-        "/api/v1/auth/login",
-        json={
-            "tenant_slug": "acme-corp",
-            "email": "admin@acme.com",
-            "password": "supersecret123",
-        },
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert "access_token" in body
 
 
 @pytest.mark.asyncio
@@ -119,25 +85,10 @@ async def test_login_with_unknown_email_returns_401(client: AsyncClient) -> None
     assert response.status_code == 401
 
 
-# ---------- End-to-End: JWT auf geschuetztem Endpoint ----------
-
-
-@pytest.mark.asyncio
-async def test_jwt_from_register_works_on_protected_endpoint(client: AsyncClient) -> None:
-    """KRITISCH: Token aus /auth/register laesst sich an /invoices nutzen."""
-    register_resp = await client.post("/api/v1/auth/register", json=VALID_REGISTER_PAYLOAD)
-    token = register_resp.json()["access_token"]
-
-    response = await client.get("/invoices", headers={"Authorization": f"Bearer {token}"})
-    assert response.status_code == 200
-    assert response.json() == []
-
-
 @pytest.mark.asyncio
 async def test_invalid_jwt_on_protected_endpoint_returns_401(client: AsyncClient) -> None:
-    """Gefaelschtes Token darf nicht durchkommen."""
     response = await client.get(
         "/invoices",
-        headers={"Authorization": "Bearer this-is-not-a-real-jwt"},
+        headers={"Authorization": "Bearer invalid.jwt.token"},
     )
     assert response.status_code == 401

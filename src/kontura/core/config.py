@@ -4,7 +4,9 @@ Alle Werte werden aus Umgebungsvariablen geladen (via .env im Dev-Betrieb).
 Pydantic validiert Typen und meldet fehlende Werte beim App-Start.
 """
 
-from pydantic import Field
+from typing import Literal
+
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -94,6 +96,21 @@ class Settings(BaseSettings):
     rate_limit_default_per_tenant: str = Field(default="60/minute")
     rate_limit_llm_per_tenant: str = Field(default="20/minute")
     rate_limit_audit_per_tenant: str = Field(default="30/minute")
+    rate_limit_resend_verification: str = Field(default="5/minute")
+
+    # ==========================================
+    # E-Mail
+    # ==========================================
+    email_backend: Literal["console", "smtp"] = Field(default="console")
+    smtp_host: str | None = Field(default=None)
+    smtp_port: int = Field(default=587)
+    smtp_user: str | None = Field(default=None)
+    smtp_password: SecretStr | None = Field(default=None)
+    smtp_from_address: str = Field(default="no-reply@kontura.local")
+    smtp_from_name: str = Field(default="Kontura")
+    app_base_url: str = Field(default="http://localhost:3000")
+    email_verification_token_ttl_hours: int = Field(default=24, ge=1)
+    email_verification_resend_cooldown_seconds: int = Field(default=60, ge=1)
 
     # ==========================================
     # CORS (Cross-Origin Resource Sharing)

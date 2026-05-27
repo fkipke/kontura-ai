@@ -42,6 +42,30 @@ class TokenResponse(BaseModel):
     expires_in_seconds: int = Field(description="Gueltigkeitsdauer in Sekunden")
 
 
+class RegisterResponse(BaseModel):
+    """Antwort fuer POST /auth/register."""
+
+    email_verification_required: bool = Field(default=True)
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(..., min_length=1, max_length=512)
+
+
+class VerifyEmailResponse(BaseModel):
+    verified: bool = Field(default=False)
+    already_verified: bool = Field(default=False)
+
+
+class ResendVerificationRequest(BaseModel):
+    tenant_slug: str = Field(..., min_length=2, max_length=64)
+    email: EmailStr
+
+
+class ResendVerificationResponse(BaseModel):
+    sent: bool = Field(default=True)
+
+
 class UserResponse(BaseModel):
     """Antwort fuer GET /auth/me."""
 

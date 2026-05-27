@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { problemDetailSchema, tokenResponseSchema } from "@/lib/api/schemas";
-import { writeAuthToken } from "@/lib/auth/cookies";
+import { problemDetailSchema, registerResponseSchema } from "@/lib/api/schemas";
 import { config } from "@/lib/config";
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -22,8 +21,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     });
   }
 
-  const token = tokenResponseSchema.parse((await response.json()) as unknown);
-  await writeAuthToken(token.access_token, token.expires_in_seconds);
-
-  return NextResponse.json({ ok: true }, { status: 200 });
+  const payload = registerResponseSchema.parse((await response.json()) as unknown);
+  return NextResponse.json(payload, { status: 201 });
 }
