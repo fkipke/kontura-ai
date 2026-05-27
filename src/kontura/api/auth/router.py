@@ -109,7 +109,7 @@ async def register(
             email_verification_token_hash=token_hash,
             email_verification_expires_at=now
             + timedelta(hours=settings.email_verification_token_ttl_hours),
-            email_verification_sent_at=now,
+            email_verification_sent_at=None,
         )
         await session.commit()
     except ConflictError:
@@ -205,6 +205,8 @@ async def resend_verification(
     user.email_verification_expires_at = now + timedelta(
         hours=settings.email_verification_token_ttl_hours
     )
+    # `sent_at` tracks cooldown across explicit resend requests only.
+    # The initial registration mail must not start the resend cooldown.
     user.email_verification_sent_at = now
     await session.commit()
 
