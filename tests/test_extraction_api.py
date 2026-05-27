@@ -321,7 +321,7 @@ def test_listing_with_broken_extraction_result_does_not_crash() -> None:
     mock_file.currency = None
     mock_file.extraction_result = {
         "vendor_name": "Broken GmbH",
-        "invoice_date": "not-a-date",    # kaputt
+        "invoice_date": "not-a-date",  # kaputt
         "total_amount": "not-a-number",  # kaputt
         "currency": "EUR",
     }
@@ -331,6 +331,6 @@ def test_listing_with_broken_extraction_result_does_not_crash() -> None:
 
     assert result.extraction_status == ExtractionStatus.COMPLETED
     assert result.vendor_name == "Broken GmbH"
-    assert result.invoice_date is None    # kaputt → None
-    assert result.total_amount is None    # kaputt → None
+    assert result.invoice_date is None  # kaputt → None
+    assert result.total_amount is None  # kaputt → None
     assert result.currency == "EUR"
