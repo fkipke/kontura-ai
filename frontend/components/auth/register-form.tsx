@@ -60,8 +60,13 @@ export function RegisterForm(): React.JSX.Element {
       </div>
       <div className="space-y-2">
         <Label htmlFor="register-tenant">Firmen-Kennung</Label>
-        <Input id="register-tenant" autoComplete="organization" {...form.register("tenant_slug")} />
-        <p className="text-xs text-muted-foreground">
+        <Input
+          id="register-tenant"
+          autoComplete="organization"
+          aria-describedby="register-tenant-hint"
+          {...form.register("tenant_slug")}
+        />
+        <p id="register-tenant-hint" className="text-xs text-muted-foreground">
           Kurzname für die URL — nur Kleinbuchstaben, Zahlen und Bindestriche (mind. 2 Zeichen). Beispiel: meine-firma
         </p>
         {form.formState.errors.tenant_slug && (

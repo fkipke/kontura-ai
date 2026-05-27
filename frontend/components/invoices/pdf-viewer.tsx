@@ -125,6 +125,7 @@ export function PdfViewer({ blob, isLoading }: PdfViewerProps): React.JSX.Elemen
               size="sm"
               onClick={() => setZoom(1)}
               title="Auf 100% zurücksetzen"
+              aria-label="Auf 100% zurücksetzen"
             >
               {Math.round(zoom * 100)}%
             </Button>
