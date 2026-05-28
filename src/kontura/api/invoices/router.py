@@ -119,9 +119,9 @@ def _compute_warnings(invoice: object) -> list[ValidationWarning]:
                 ValidationWarning(
                     code="ust_total_mismatch",
                     message=(
-                        f"Netto + Steuer ({computed:.2f} \u20ac) weicht vom "
-                        f"Gesamtbetrag ({total_dec:.2f} \u20ac) ab. "
-                        "Multi-Tax-S\u00e4tze sind m\u00f6glich \u2014 bitte pr\u00fcfen."
+                        f"Netto + Steuer ({computed:.2f} €) weicht vom "
+                        f"Gesamtbetrag ({total_dec:.2f} €) ab. "
+                        "Multi-Tax-Sätze sind möglich — bitte prüfen."
                     ),
                     field="total_amount",
                 )
