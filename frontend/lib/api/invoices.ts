@@ -78,7 +78,7 @@ export function useUpdateInvoice(invoiceId: string) {
       }
 
       if (!response.ok) {
-        const payload2 = (await response.json().catch(() => null)) as {
+        const errorPayload = (await response.json().catch(() => null)) as {
           detail?: string;
           status?: number;
           request_id?: string;
@@ -86,9 +86,9 @@ export function useUpdateInvoice(invoiceId: string) {
         } | null;
         throw new ApiClientError(
           response.status,
-          payload2?.detail ?? "Aktualisierung fehlgeschlagen.",
-          payload2?.request_id ?? null,
-          payload2?.errors ?? [],
+          errorPayload?.detail ?? "Aktualisierung fehlgeschlagen.",
+          errorPayload?.request_id ?? null,
+          errorPayload?.errors ?? [],
           null,
         );
       }

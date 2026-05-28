@@ -116,8 +116,8 @@ export function ExtractedFieldsPanel({
         expected_version: version,
         [field]: value || null,
       };
-      const result2 = await updateMutation.mutateAsync(payload);
-      if (result2.warnings.some((w) => w.code === "ust_total_mismatch")) {
+      const updateResult = await updateMutation.mutateAsync(payload);
+      if (updateResult.warnings.some((w) => w.code === "ust_total_mismatch")) {
         toast.warning("USt-Prüfung: Netto + Steuer stimmt nicht mit Gesamtbetrag überein.");
       }
     } catch (error) {
