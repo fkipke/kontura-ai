@@ -1,11 +1,23 @@
 """Invoice-Modell: Eingangsrechnung (tenant-isoliert)."""
 
-from datetime import date
+import uuid
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Any
 
-from sqlalchemy import Date, Numeric, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as SAEnum
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from kontura.infra.db import Base
@@ -59,6 +71,28 @@ class Invoice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     # G2.1: Steuerbetrag (nullable - Altdaten ohne Extraktion haben keinen Steuerbetrag)
     tax_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+
+    # G3.2: Optimistic Locking - wird bei jedem Edit inkrementiert
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+
+    # G3.2: Buchhalter-Review-Flag - gesetzt wenn Buchhalter "Geprueft" klickt
+    is_reviewed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    # G3.2: Zeitpunkt der letzten Pruefung (nullable - noch nicht geprueft)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # G3.2: Wer hat geprueft? (FK auf users.id, ON DELETE SET NULL - Audit bleibt erhalten)
+    reviewed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # G3.2: Editierbare Positionen als JSONB-Snapshot.
+    # KI-Original bleibt in InvoiceFile.extraction_result (unveraenderlich, GoBD).
+    line_items: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         # K4: invoice_number ist pro Tenant eindeutig (verhindert Doppel-Buchungen).
