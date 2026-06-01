@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any, TypeAlias, cast
+from typing import Any, TypeAlias
 
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -31,19 +31,21 @@ def _to_jsonb(value: Any) -> dict[str, JSONValue]:
 
 def _json_safe(value: Any) -> JSONValue:
     """Konvertiert Pydantic-Modelle rekursiv in JSON-kompatible Primitive."""
-    if isinstance(value, BaseModel):
-        return value.model_dump(mode="json")
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
     if isinstance(value, Decimal):
         return str(value)
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, date):
         return value.isoformat()
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
     if isinstance(value, list):
         return [_json_safe(item) for item in value]
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
-    return cast(JSONValue, value)
+    raise TypeError(f"Unsupported JSONB value type: {type(value).__name__}")
 
 
 def _line_items_equal(a: Any, b: Any) -> bool:
