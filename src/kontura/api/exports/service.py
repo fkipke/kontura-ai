@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 from datetime import UTC, date, datetime, timedelta
 
 import structlog
@@ -76,6 +77,6 @@ def _fiscal_year_end(start: date) -> date:
     try:
         next_year_start = start.replace(year=start.year + 1)
     except ValueError:
-        # z.B. 29.02. -> 28.02. im Folgejahr
-        next_year_start = start.replace(year=start.year + 1, day=28)
+        max_day = calendar.monthrange(start.year + 1, start.month)[1]
+        next_year_start = date(start.year + 1, start.month, min(start.day, max_day))
     return next_year_start - timedelta(days=1)

@@ -44,7 +44,7 @@ def _truncate_buchungstext(value: str, max_length: int = 60) -> str:
     if len(text) <= max_length:
         return text
 
-    cut_at = text.rfind(" ", 0, max_length + 1)
+    cut_at = text.rfind(" ", 0, max_length)
     if cut_at > 0:
         return text[:cut_at].rstrip()
     return text[:max_length]
