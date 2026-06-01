@@ -185,6 +185,16 @@ Konfiguration: [`.github/dependabot.yml`](.github/dependabot.yml)
 
 ---
 
+## G4.0 — DATEV-Export
+
+- **Endpoint:** `GET /api/v1/exports/datev?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- **Format:** DATEV-EXTF Buchungsstapel CSV (`windows-1252`, `;`, CRLF)
+- **Konfiguration:** `DATEV_CONSULTANT_NUMBER`, `DATEV_CLIENT_NUMBER`, `DATEV_FISCAL_YEAR_START`, `DATEV_ACCOUNT_LENGTH`, `DATEV_DEFAULT_EXPENSE_ACCOUNT`, `DATEV_DEFAULT_CREDITOR_ACCOUNT`
+- **Hinweis:** `BU-Schlüssel` bleibt im Export leer und wird nach dem Import in DATEV manuell gesetzt.
+- **Ausblick:** ZUGFeRD/XML folgt in G4.1, Lieferanten-Auto-Mapping folgt in G4.3.
+
+---
+
 ## Roadmap
 
 - [x] **F1 — JWT-Auth + Multi-Tenancy:** Tenant-isolierte Auth via JWT
@@ -195,6 +205,7 @@ Konfiguration: [`.github/dependabot.yml`](.github/dependabot.yml)
 - [x] **H2 — Dependabot + Security-Scanning:** Automatische Update-PRs
 - [x] **G2.0 — Invoice File Upload:** `POST /api/v1/invoice-files` (PDF/PNG/JPEG), `GET /api/v1/invoice-files`, `GET /api/v1/invoice-files/{id}` — mit Magic-Byte-Validierung, SHA-256-Deduplication und Tenant-Isolation
 - [x] **G2.1 — KI-Extraktion:** GPT-4o Vision, structured outputs, async via FastAPI BackgroundTasks, auto-link zu Invoice
+- [x] **G4.0 — DATEV-EXTF-Buchungsstapel-Export:** CSV-Export geprüfter Rechnungen (`is_reviewed=true`) im Format Windows-1252
 - [ ] **G1 — Frontend (Next.js):** Login, Rechnungsliste, Detail-Ansicht
 - [ ] **Phase 3 — Validation & Booking:** SKR03-Kontierung, Buchungsvorschlag
 - [ ] **Phase 4 — Integrationen:** SAP FI, DATEV Unternehmen online
