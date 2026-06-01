@@ -7,7 +7,7 @@ Kein Endpoint kann das vergessen - der TenantContext-Parameter ist Pflicht.
 
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -20,28 +20,40 @@ from kontura.infra.models.invoice import Invoice
 from kontura.infra.models.invoice_edit import InvoiceEdit
 
 
+def _serialize_line_items(items: Any) -> Any:
+    """Konvertiert eine Liste von InvoiceLineItem (Pydantic) in JSON-safe Dicts.
+
+    JSONB-Spalten gehen via asyncpg durch json.dumps - Pydantic-Modelle
+    sind dort NICHT serialisierbar. Wir muessen vor jedem JSONB-Write
+    auf primitive Typen runter (Decimal -> str, etc.). mode="json" macht
+    genau das.
+    """
+    if items is None:
+        return None
+    result = []
+    for item in items:
+        if isinstance(item, InvoiceLineItem):
+            result.append(item.model_dump(mode="json"))
+        elif isinstance(item, dict):
+            # Defensive: falls schon dict, ggf. Decimals stringifizieren
+            result.append({k: str(v) if isinstance(v, Decimal) else v for k, v in item.items()})
+        else:
+            result.append(item)
+    return result
+
+
 def _to_jsonb(value: Any) -> dict[str, Any]:
     """Serialisiert einen skalaren Wert in JSONB-kompatibles Dict."""
     if isinstance(value, Decimal):
         return {"value": str(value)}
     if isinstance(value, datetime):
         return {"value": value.isoformat()}
+    if isinstance(value, date):
+        # invoice_date ist ein date, kein datetime - separat behandeln,
+        # sonst landet ein nicht-serialisierbares date-Objekt in JSONB.
+        return {"value": value.isoformat()}
     if isinstance(value, list):
-        # line_items: Liste von InvoiceLineItem-Objekten oder Dicts
-        items = []
-        for item in value:
-            if isinstance(item, InvoiceLineItem):
-                items.append(
-                    {
-                        k: str(v) if isinstance(v, Decimal) else v
-                        for k, v in item.model_dump().items()
-                    }
-                )
-            elif isinstance(item, dict):
-                items.append({k: str(v) if isinstance(v, Decimal) else v for k, v in item.items()})
-            else:
-                items.append(item)
-        return {"value": items}
+        return {"value": _serialize_line_items(value)}
     return {"value": value}
 
 
@@ -51,24 +63,9 @@ def _line_items_equal(a: Any, b: Any) -> bool:
         return True
     if a is None or b is None:
         return False
-
-    def normalize(items: list[Any]) -> list[dict[str, Any]]:
-        result = []
-        for item in items:
-            if isinstance(item, InvoiceLineItem):
-                result.append(
-                    {
-                        k: str(v) if isinstance(v, Decimal) else v
-                        for k, v in item.model_dump().items()
-                    }
-                )
-            elif isinstance(item, dict):
-                result.append({k: str(v) if isinstance(v, Decimal) else v for k, v in item.items()})
-            else:
-                result.append(item)
-        return result
-
-    return normalize(a) == normalize(b)
+    # Nutzt _serialize_line_items als Normalisierungs-Grundlage:
+    # nach der Serialisierung sind Decimals als Strings vergleichbar.
+    return _serialize_line_items(a) == _serialize_line_items(b)
 
 
 class InvoiceRepository:
@@ -136,13 +133,32 @@ class InvoiceRepository:
         for field_name, new_value in changes.items():
             old_value = getattr(invoice, field_name)
 
-            # line_items: Deep-Equality-Check
+            # line_items: Deep-Equality-Check + Pydantic-Serialisierung
             if field_name == "line_items":
                 if _line_items_equal(old_value, new_value):
                     continue  # Kein Audit-Eintrag wenn ungeaendert
-            else:
-                if old_value == new_value:
-                    continue  # Kein Audit-Eintrag wenn ungeaendert
+
+                # KRITISCH: Pydantic-Modelle MUESSEN vor JSONB-Insert in
+                # JSON-safe Dicts konvertiert werden - sonst stirbt asyncpg
+                # mit "Object of type InvoiceLineItem is not JSON serializable".
+                serialized_new = _serialize_line_items(new_value)
+
+                edit = InvoiceEdit(
+                    tenant_id=invoice.tenant_id,
+                    invoice_id=invoice.id,
+                    user_id=user_id,
+                    field=field_name,
+                    old_value=_to_jsonb(old_value),
+                    new_value=_to_jsonb(serialized_new),
+                )
+                self._session.add(edit)
+                # Feld am ORM-Objekt setzen - mit der serialisierten Form,
+                # damit die JSONB-Spalte auch beim UPDATE JSON-safe ist.
+                setattr(invoice, field_name, serialized_new)
+                continue
+
+            if old_value == new_value:
+                continue  # Kein Audit-Eintrag wenn ungeaendert
 
             edit = InvoiceEdit(
                 tenant_id=invoice.tenant_id,
