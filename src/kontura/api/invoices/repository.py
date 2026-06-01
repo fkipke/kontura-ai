@@ -11,10 +11,11 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kontura.api.invoices.schemas import InvoiceCreate, InvoiceLineItem
+from kontura.api.invoices.schemas import InvoiceCreate
 from kontura.core.tenant import TenantContext
 from kontura.infra.models.invoice import Invoice
 from kontura.infra.models.invoice_edit import InvoiceEdit
@@ -22,27 +23,22 @@ from kontura.infra.models.invoice_edit import InvoiceEdit
 
 def _to_jsonb(value: Any) -> dict[str, Any]:
     """Serialisiert einen skalaren Wert in JSONB-kompatibles Dict."""
+    return {"value": _json_safe(value)}
+
+
+def _json_safe(value: Any) -> Any:
+    """Konvertiert Pydantic-Modelle rekursiv in JSON-kompatible Primitive."""
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
     if isinstance(value, Decimal):
-        return {"value": str(value)}
+        return str(value)
     if isinstance(value, datetime):
-        return {"value": value.isoformat()}
+        return value.isoformat()
     if isinstance(value, list):
-        # line_items: Liste von InvoiceLineItem-Objekten oder Dicts
-        items = []
-        for item in value:
-            if isinstance(item, InvoiceLineItem):
-                items.append(
-                    {
-                        k: str(v) if isinstance(v, Decimal) else v
-                        for k, v in item.model_dump().items()
-                    }
-                )
-            elif isinstance(item, dict):
-                items.append({k: str(v) if isinstance(v, Decimal) else v for k, v in item.items()})
-            else:
-                items.append(item)
-        return {"value": items}
-    return {"value": value}
+        return [_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    return value
 
 
 def _line_items_equal(a: Any, b: Any) -> bool:
@@ -51,24 +47,7 @@ def _line_items_equal(a: Any, b: Any) -> bool:
         return True
     if a is None or b is None:
         return False
-
-    def normalize(items: list[Any]) -> list[dict[str, Any]]:
-        result = []
-        for item in items:
-            if isinstance(item, InvoiceLineItem):
-                result.append(
-                    {
-                        k: str(v) if isinstance(v, Decimal) else v
-                        for k, v in item.model_dump().items()
-                    }
-                )
-            elif isinstance(item, dict):
-                result.append({k: str(v) if isinstance(v, Decimal) else v for k, v in item.items()})
-            else:
-                result.append(item)
-        return result
-
-    return normalize(a) == normalize(b)
+    return bool(_json_safe(a) == _json_safe(b))
 
 
 class InvoiceRepository:
@@ -154,7 +133,11 @@ class InvoiceRepository:
             )
             self._session.add(edit)
             # Feld am ORM-Objekt setzen
-            setattr(invoice, field_name, new_value)
+            setattr(
+                invoice,
+                field_name,
+                _json_safe(new_value) if field_name == "line_items" else new_value,
+            )
 
         # 2. is_reviewed-Sonderfall
         if is_reviewed_change is not None:
