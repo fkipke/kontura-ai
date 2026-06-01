@@ -2,12 +2,15 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useCallback } from "react";
 import { useParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 
 import { ExtractedFieldsPanel } from "@/components/invoices/extracted-fields-panel";
+import { useInvoice } from "@/lib/api/invoices";
 import { useExtractionStatus, useInvoiceFiles, fetchInvoiceFileBlob } from "@/lib/api/invoiceFiles";
+import { useQuery } from "@tanstack/react-query";
 
 const PdfViewer = dynamic(
   () => import("@/components/invoices/pdf-viewer").then((module) => module.PdfViewer),
@@ -17,6 +20,7 @@ const PdfViewer = dynamic(
 export default function InvoiceDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
   const id = params.id;
+  const queryClient = useQueryClient();
 
   const listQuery = useInvoiceFiles();
   const extractionQuery = useExtractionStatus(id);
@@ -26,6 +30,14 @@ export default function InvoiceDetailPage(): React.JSX.Element {
   });
 
   const invoice = listQuery.data?.items.find((item) => item.id === id) ?? null;
+
+  // G3.2: linked_invoice_id aus Extraction-Status → Invoice-Daten laden
+  const linkedInvoiceId = extractionQuery.data?.linked_invoice_id ?? null;
+  const invoiceQuery = useInvoice(linkedInvoiceId ?? "");
+
+  const handleConflictReload = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["invoice", linkedInvoiceId] });
+  }, [queryClient, linkedInvoiceId]);
 
   return (
     <>
@@ -47,6 +59,9 @@ export default function InvoiceDetailPage(): React.JSX.Element {
             invoice={invoice}
             extraction={extractionQuery.data ?? null}
             loading={listQuery.isLoading || extractionQuery.isLoading}
+            invoiceData={invoiceQuery.data ?? null}
+            invoiceId={linkedInvoiceId}
+            onConflictReload={handleConflictReload}
           />
         </aside>
       </main>

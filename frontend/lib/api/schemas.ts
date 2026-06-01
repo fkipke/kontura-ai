@@ -105,6 +105,42 @@ export const extractionStatusSchema = z.object({
   linked_invoice_id: z.string().uuid().nullable(),
 });
 
+// G3.2: Invoice-Edit-Schemas
+
+export const validationWarningSchema = z.object({
+  code: z.enum(["ust_total_mismatch", "future_invoice_date", "unusual_currency"]),
+  message: z.string(),
+  field: z.string().nullable().optional(),
+});
+
+export const invoiceLineItemSchema = z.object({
+  description: z.string().nullable().optional(),
+  quantity: z.union([z.string(), z.number()]).nullable().optional(),
+  unit_price: z.union([z.string(), z.number()]).nullable().optional(),
+  total_price: z.union([z.string(), z.number()]).nullable().optional(),
+});
+
+export const invoiceResponseSchema = z.object({
+  id: z.string().uuid(),
+  tenant_id: z.string(),
+  version: z.number().int(),
+  is_reviewed: z.boolean(),
+  reviewed_at: z.string().nullable(),
+  reviewed_by_user_id: z.string().uuid().nullable(),
+  vendor_name: z.string().nullable(),
+  invoice_number: z.string().nullable(),
+  invoice_date: z.string().nullable(),
+  net_amount: z.union([z.string(), z.number()]).nullable(),
+  tax_amount: z.union([z.string(), z.number()]).nullable(),
+  total_amount: z.union([z.string(), z.number()]).nullable(),
+  currency: z.string().nullable(),
+  line_items: z.array(invoiceLineItemSchema).nullable(),
+  status: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  validation_warnings: z.array(validationWarningSchema),
+});
+
 export type ProblemDetail = z.infer<typeof problemDetailSchema>;
 export type LoginPayload = z.infer<typeof loginPayloadSchema>;
 export type RegisterPayload = z.infer<typeof registerPayloadSchema>;
@@ -115,3 +151,7 @@ export type MeResponse = z.infer<typeof meResponseSchema>;
 export type RegisterResponse = z.infer<typeof registerResponseSchema>;
 export type VerifyEmailResponse = z.infer<typeof verifyEmailResponseSchema>;
 export type ResendVerificationResponse = z.infer<typeof resendVerificationResponseSchema>;
+// G3.2
+export type ValidationWarning = z.infer<typeof validationWarningSchema>;
+export type InvoiceLineItem = z.infer<typeof invoiceLineItemSchema>;
+export type InvoiceResponse = z.infer<typeof invoiceResponseSchema>;
