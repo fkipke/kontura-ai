@@ -4,6 +4,7 @@ Alle Werte werden aus Umgebungsvariablen geladen (via .env im Dev-Betrieb).
 Pydantic validiert Typen und meldet fehlende Werte beim App-Start.
 """
 
+from datetime import date
 from typing import Literal
 
 from pydantic import Field, SecretStr
@@ -179,6 +180,25 @@ class Settings(BaseSettings):
     extraction_pdf_dpi: int = Field(
         default=150,
         description="DPI fuer PDF-Rendering via PyMuPDF (default: 150)",
+    )
+
+    # ==========================================
+    # DATEV-Export (G4.0)
+    # ==========================================
+    datev_consultant_number: int = Field(default=12345, description="DATEV Beraternummer")
+    datev_client_number: int = Field(default=67890, description="DATEV Mandantennummer")
+    datev_fiscal_year_start: date = Field(
+        default_factory=lambda: date(date.today().year, 1, 1),
+        description="Wirtschaftsjahr-Beginn fuer DATEV-Header",
+    )
+    datev_account_length: int = Field(default=4, description="DATEV Sachkontenlaenge")
+    datev_default_expense_account: int = Field(
+        default=3400,
+        description="Default-Aufwandskonto fuer DATEV-Export",
+    )
+    datev_default_creditor_account: int = Field(
+        default=70000,
+        description="Default-Kreditorenkonto fuer DATEV-Export",
     )
 
 
