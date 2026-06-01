@@ -9,6 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { downloadDatevExport, DatevExportError } from "@/lib/api/exports";
 
+const MAX_EXPORT_RANGE_DAYS = 366;
+const AUTH_REDIRECT_DELAY_MS = 1500;
+
 function getTodayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -32,7 +35,7 @@ export function DatevExportForm(): React.JSX.Element {
   const router = useRouter();
 
   const fromAfterTo = Boolean(from && to && from > to);
-  const rangeTooLarge = Boolean(from && to && !fromAfterTo && daysBetween(from, to) > 366);
+  const rangeTooLarge = Boolean(from && to && !fromAfterTo && daysBetween(from, to) > MAX_EXPORT_RANGE_DAYS);
   const incomplete = !from || !to;
   const disabled = loading || incomplete || fromAfterTo || rangeTooLarge;
 
@@ -67,7 +70,7 @@ export function DatevExportForm(): React.JSX.Element {
           toast.error("Sitzung abgelaufen", { description: "Bitte erneut anmelden." });
           setTimeout(() => {
             router.push("/login");
-          }, 1500);
+          }, AUTH_REDIRECT_DELAY_MS);
         } else if (err.status === 429) {
           toast.error("Zu viele Anfragen", {
             description: "Bitte einen Moment warten und erneut versuchen.",
