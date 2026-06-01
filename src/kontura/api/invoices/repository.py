@@ -7,9 +7,9 @@ Kein Endpoint kann das vergessen - der TenantContext-Parameter ist Pflicht.
 
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, TypeAlias, cast
 
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -20,13 +20,16 @@ from kontura.core.tenant import TenantContext
 from kontura.infra.models.invoice import Invoice
 from kontura.infra.models.invoice_edit import InvoiceEdit
 
+JSONScalar: TypeAlias = str | int | float | bool | None
+JSONValue: TypeAlias = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
 
-def _to_jsonb(value: Any) -> dict[str, Any]:
+
+def _to_jsonb(value: Any) -> dict[str, JSONValue]:
     """Serialisiert einen skalaren Wert in JSONB-kompatibles Dict."""
     return {"value": _json_safe(value)}
 
 
-def _json_safe(value: Any) -> Any:
+def _json_safe(value: Any) -> JSONValue:
     """Konvertiert Pydantic-Modelle rekursiv in JSON-kompatible Primitive."""
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
@@ -34,11 +37,13 @@ def _json_safe(value: Any) -> Any:
         return str(value)
     if isinstance(value, datetime):
         return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
     if isinstance(value, list):
         return [_json_safe(item) for item in value]
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
-    return value
+    return cast(JSONValue, value)
 
 
 def _line_items_equal(a: Any, b: Any) -> bool:
@@ -47,7 +52,7 @@ def _line_items_equal(a: Any, b: Any) -> bool:
         return True
     if a is None or b is None:
         return False
-    return bool(_json_safe(a) == _json_safe(b))
+    return _json_safe(a) == _json_safe(b)
 
 
 class InvoiceRepository:
