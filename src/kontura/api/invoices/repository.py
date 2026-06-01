@@ -20,7 +20,7 @@ from kontura.infra.models.invoice import Invoice
 from kontura.infra.models.invoice_edit import InvoiceEdit
 
 
-def _serialize_line_items(items: Any) -> Any:
+def _serialize_line_items(items: Any) -> list[dict[str, Any]] | None:
     """Konvertiert eine Liste von InvoiceLineItem (Pydantic) in JSON-safe Dicts.
 
     JSONB-Spalten gehen via asyncpg durch json.dumps - Pydantic-Modelle
@@ -30,7 +30,7 @@ def _serialize_line_items(items: Any) -> Any:
     """
     if items is None:
         return None
-    result = []
+    result: list[dict[str, Any]] = []
     for item in items:
         if isinstance(item, InvoiceLineItem):
             result.append(item.model_dump(mode="json"))
@@ -38,7 +38,8 @@ def _serialize_line_items(items: Any) -> Any:
             # Defensive: falls schon dict, ggf. Decimals stringifizieren
             result.append({k: str(v) if isinstance(v, Decimal) else v for k, v in item.items()})
         else:
-            result.append(item)
+            # Fallback: pack non-dict, non-pydantic items into a dict wrapper
+            result.append({"value": item})
     return result
 
 
@@ -65,7 +66,8 @@ def _line_items_equal(a: Any, b: Any) -> bool:
         return False
     # Nutzt _serialize_line_items als Normalisierungs-Grundlage:
     # nach der Serialisierung sind Decimals als Strings vergleichbar.
-    return _serialize_line_items(a) == _serialize_line_items(b)
+    # bool(...) macht mypy gluecklich (sonst "Returning Any").
+    return bool(_serialize_line_items(a) == _serialize_line_items(b))
 
 
 class InvoiceRepository:
