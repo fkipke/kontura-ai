@@ -23,7 +23,7 @@ UBL_MINIMAL = b"""<?xml version="1.0" encoding="UTF-8"?>
          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
          xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2">
   <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</cbc:CustomizationID>
-  <cbc:ID>RE-2026-001</cbc:ID>
+  <cbc:ID>RE-TEST-001</cbc:ID>
   <cbc:IssueDate>2026-05-15</cbc:IssueDate>
   <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
   <cac:AccountingSupplierParty>
@@ -77,7 +77,7 @@ async def test_xrechnung_ubl_upload_creates_invoice_synchronously(
         await session.execute(
             select(Invoice).where(
                 Invoice.tenant_id == "acme-corp",
-                Invoice.invoice_number == "RE-2026-001",
+                Invoice.invoice_number == "RE-TEST-001",
             )
         )
     ).scalar_one_or_none()
@@ -147,7 +147,7 @@ async def test_duplicate_invoice_number_links_existing_invoice_no_overwrite(
         await session.execute(
             select(func.count())
             .select_from(Invoice)
-            .where(Invoice.tenant_id == "acme-corp", Invoice.invoice_number == "RE-2026-001")
+            .where(Invoice.tenant_id == "acme-corp", Invoice.invoice_number == "RE-TEST-001")
         )
     ).scalar_one()
     assert invoices_count == 1
@@ -156,7 +156,7 @@ async def test_duplicate_invoice_number_links_existing_invoice_no_overwrite(
         await session.execute(
             select(Invoice).where(
                 Invoice.tenant_id == "acme-corp",
-                Invoice.invoice_number == "RE-2026-001",
+                Invoice.invoice_number == "RE-TEST-001",
             )
         )
     ).scalar_one()
@@ -187,7 +187,7 @@ async def test_tenant_isolation_einvoice_invoice(
         await session.execute(
             select(Invoice).where(
                 Invoice.tenant_id == "acme-corp",
-                Invoice.invoice_number == "RE-2026-001",
+                Invoice.invoice_number == "RE-TEST-001",
             )
         )
     ).scalar_one_or_none()
@@ -197,7 +197,7 @@ async def test_tenant_isolation_einvoice_invoice(
         await session.execute(
             select(Invoice).where(
                 Invoice.tenant_id == "other-corp",
-                Invoice.invoice_number == "RE-2026-001",
+                Invoice.invoice_number == "RE-TEST-001",
             )
         )
     ).scalar_one_or_none()

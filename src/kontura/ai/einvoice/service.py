@@ -33,10 +33,13 @@ class EinvoiceExtractionService:
     def __init__(
         self,
         session: AsyncSession,
-        invoice_file_repo: object,  # noqa: ARG002
-        invoice_repo: object,  # noqa: ARG002
+        invoice_file_repo: object,
+        invoice_repo: object,
     ) -> None:
         self._session = session
+        # Repositories sind Teil der Service-API fuer konsistente Konstruktion im Upload-Flow.
+        self._invoice_file_repo = invoice_file_repo
+        self._invoice_repo = invoice_repo
 
     async def try_extract(
         self,
