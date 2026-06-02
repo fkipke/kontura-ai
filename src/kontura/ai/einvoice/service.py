@@ -85,7 +85,7 @@ class EinvoiceExtractionService:
             raise
 
         try:
-            invoice = await self._find_or_create_invoice(tenant, extracted_data)
+            invoice = await self._find_or_create_invoice(tenant, invoice_file, extracted_data)
 
             invoice_file.invoice_id = invoice.id
             invoice_file.extraction_status = ExtractionStatus.COMPLETED
@@ -112,6 +112,7 @@ class EinvoiceExtractionService:
     async def _find_or_create_invoice(
         self,
         tenant: TenantContext,
+        invoice_file: InvoiceFile,
         data: ExtractedInvoiceData,
     ) -> Invoice:
         stmt = select(Invoice).where(
@@ -120,6 +121,7 @@ class EinvoiceExtractionService:
         )
         existing = (await self._session.execute(stmt)).scalar_one_or_none()
         if existing is not None:
+            invoice_file.invoice_id = existing.id
             return existing
 
         invoice = Invoice(

@@ -1,22 +1,34 @@
 from __future__ import annotations
 
 import io
+import uuid
 from decimal import Decimal
 
 import fitz
 import pytest
+from fastapi import BackgroundTasks
 from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kontura.api.invoice_files.router import _run_extraction_in_background
 from kontura.infra.models.invoice import Invoice
+from kontura.infra.models.invoice_file import InvoiceFile
 from tests.conftest import FakeAIProvider, auth_headers
 
 BASE_URL = "/api/v1/invoice-files"
 HEADERS_A = auth_headers("acme-corp")
 HEADERS_B = auth_headers("other-corp")
 
-MINIMAL_PDF = b"%PDF-1.4\n%%EOF\n"
+def _make_valid_pdf_bytes() -> bytes:
+    doc = fitz.open()
+    doc.new_page()
+    buf = io.BytesIO()
+    try:
+        doc.save(buf)
+    finally:
+        doc.close()
+    return buf.getvalue()
 
 UBL_MINIMAL = b"""<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
@@ -118,7 +130,11 @@ async def test_plain_pdf_upload_falls_back_to_ai_pipeline(
     client: AsyncClient,
     fake_ai_provider: FakeAIProvider,
 ) -> None:
-    resp = await client.post(BASE_URL, files=_pdf_file(MINIMAL_PDF, "plain.pdf"), headers=HEADERS_A)
+    resp = await client.post(
+        BASE_URL,
+        files=_pdf_file(_make_valid_pdf_bytes(), "plain.pdf"),
+        headers=HEADERS_A,
+    )
     assert resp.status_code == 201
     assert resp.json()["extraction_status"] == "pending"
     assert fake_ai_provider.extract_call_count >= 1
@@ -166,13 +182,65 @@ async def test_duplicate_invoice_number_links_existing_invoice_no_overwrite(
 @pytest.mark.asyncio
 async def test_einvoice_parse_failure_falls_back_to_ai(
     client: AsyncClient,
-    fake_ai_provider: FakeAIProvider,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    captured_tasks: list[tuple[object, tuple[object, ...], dict[str, object]]] = []
+
+    def _spy_add_task(
+        self: BackgroundTasks,
+        func: object,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        captured_tasks.append((func, args, kwargs))
+
+    monkeypatch.setattr(BackgroundTasks, "add_task", _spy_add_task)
+
     broken_xml = b"<Invoice><broken></Invoice>"
     resp = await client.post(BASE_URL, files=_xml_file(broken_xml, "broken.xml"), headers=HEADERS_A)
     assert resp.status_code == 201
     assert resp.json()["extraction_status"] == "pending"
-    assert fake_ai_provider.extract_call_count >= 1
+    assert len(captured_tasks) == 1
+    task_callable, task_args, task_kwargs = captured_tasks[0]
+    assert task_callable is _run_extraction_in_background
+    assert str(task_args[1]) == resp.json()["id"]
+    assert task_kwargs == {}
+
+
+@pytest.mark.asyncio
+async def test_duplicate_invoice_number_does_not_raise_integrity_error(
+    client: AsyncClient,
+    session: AsyncSession,
+) -> None:
+    first = await client.post(
+        BASE_URL,
+        files=_xml_file(UBL_MINIMAL, "first.xml"),
+        headers=HEADERS_A,
+    )
+    assert first.status_code == 201
+    first_id = uuid.UUID(first.json()["id"])
+
+    second_payload = UBL_MINIMAL.replace(b"</Invoice>", b"<!--different-sha--></Invoice>")
+    second = await client.post(
+        BASE_URL,
+        files=_xml_file(second_payload, "second.xml"),
+        headers=HEADERS_A,
+    )
+    assert second.status_code == 201
+    second_id = uuid.UUID(second.json()["id"])
+
+    invoice_file_rows = (
+        await session.execute(
+            select(InvoiceFile.id, InvoiceFile.invoice_id)
+            .where(InvoiceFile.id.in_([first_id, second_id]))
+        )
+    ).all()
+    assert len(invoice_file_rows) == 2
+    first_invoice_id = invoice_file_rows[0][1]
+    second_invoice_id = invoice_file_rows[1][1]
+    assert first_invoice_id is not None
+    assert second_invoice_id is not None
+    assert first_invoice_id == second_invoice_id
 
 
 @pytest.mark.asyncio
