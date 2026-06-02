@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from defusedxml import ElementTree
 
 from kontura.ai.einvoice.pdf_attachments import extract_embedded_einvoice_xml
@@ -9,6 +10,8 @@ _XML_MIME_TYPES = frozenset({"application/xml", "text/xml"})
 
 _UBL_ROOT = "{urn:oasis:names:specification:ubl:schema:xsd:Invoice-2}Invoice"
 _CII_ROOT = "{urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100}CrossIndustryInvoice"
+
+logger = structlog.get_logger(__name__)
 
 
 def detect_einvoice_format(content: bytes, mime_type: str) -> EinvoiceFormat:
@@ -28,10 +31,14 @@ def detect_einvoice_format(content: bytes, mime_type: str) -> EinvoiceFormat:
         return EinvoiceFormat.NONE
 
     if normalized_mime == "application/pdf":
-        return (
-            EinvoiceFormat.ZUGFERD_PDF
-            if extract_embedded_einvoice_xml(content) is not None
-            else EinvoiceFormat.NONE
-        )
+        try:
+            return (
+                EinvoiceFormat.ZUGFERD_PDF
+                if extract_embedded_einvoice_xml(content) is not None
+                else EinvoiceFormat.NONE
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("einvoice_pdf_detection_failed")
+            return EinvoiceFormat.NONE
 
     return EinvoiceFormat.NONE

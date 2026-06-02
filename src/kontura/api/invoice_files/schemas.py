@@ -77,7 +77,27 @@ class InvoiceFileResponse(BaseModel):
     @classmethod
     def from_model(cls, invoice_file: "InvoiceFile") -> "InvoiceFileResponse":
         """Projiziert ein InvoiceFile-Modell inkl. denormalisierter Extraction-Felder."""
-        base = cls.model_validate(invoice_file)
+        extraction_method = getattr(invoice_file, "extraction_method", None)
+        normalized_extraction_method = (
+            extraction_method if isinstance(extraction_method, str) else None
+        )
+        base = cls.model_validate(
+            {
+                "id": invoice_file.id,
+                "filename": invoice_file.filename,
+                "mime_type": invoice_file.mime_type,
+                "size_bytes": invoice_file.size_bytes,
+                "sha256": invoice_file.sha256,
+                "created_at": invoice_file.created_at,
+                "deduplicated": getattr(invoice_file, "deduplicated", False),
+                "extraction_status": invoice_file.extraction_status,
+                "extraction_method": normalized_extraction_method,
+                "vendor_name": getattr(invoice_file, "vendor_name", None),
+                "invoice_date": getattr(invoice_file, "invoice_date", None),
+                "total_amount": getattr(invoice_file, "total_amount", None),
+                "currency": getattr(invoice_file, "currency", None),
+            }
+        )
         if invoice_file.extraction_status.value == "completed" and isinstance(
             invoice_file.extraction_result, dict
         ):
