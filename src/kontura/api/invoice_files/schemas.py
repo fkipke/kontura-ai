@@ -66,6 +66,7 @@ class InvoiceFileResponse(BaseModel):
     deduplicated: bool = False
     # G2.1: KI-Extraktionsstatus (fuer UX: User sieht direkt was schon ausgewertet ist)
     extraction_status: ExtractionStatus = ExtractionStatus.PENDING
+    extraction_method: str | None = None
     # G3.1b: Denormalisierte Extraction-Felder fuer Listings (n+1 vermeiden).
     # Werden nur befuellt, wenn extraction_status == "completed".
     vendor_name: str | None = None
@@ -106,3 +107,4 @@ class ExtractionStatusResponse(BaseModel):
     error: str | None
     result: dict[str, Any] | None
     linked_invoice_id: uuid.UUID | None
+    extraction_method: str | None = None

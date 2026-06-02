@@ -33,6 +33,7 @@ from fastapi import (
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from kontura.ai.einvoice.service import EinvoiceExtractionService
 from kontura.ai.extraction.service import ExtractionService
 from kontura.api.dependencies import (
     AIProviderDep,
@@ -43,6 +44,7 @@ from kontura.api.dependencies import (
 )
 from kontura.api.invoice_files.repository import InvoiceFileRepository
 from kontura.api.invoice_files.schemas import ExtractionStatusResponse, InvoiceFileResponse
+from kontura.api.invoices.repository import InvoiceRepository
 from kontura.api.rate_limit import limiter
 from kontura.core.config import settings
 from kontura.core.exceptions import NotFoundError
@@ -56,7 +58,8 @@ router = APIRouter(prefix="/invoice-files", tags=["invoice-files"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 # Erlaubte MIME-Types und ihre Magic-Bytes (erste Bytes der Datei)
-_ALLOWED_MIME_TYPES = frozenset(["application/pdf", "image/png", "image/jpeg"])
+_XML_MIME_TYPES = frozenset(["application/xml", "text/xml"])
+_ALLOWED_MIME_TYPES = frozenset(["application/pdf", "image/png", "image/jpeg", *_XML_MIME_TYPES])
 
 _MAGIC_BYTES: dict[str, bytes] = {
     "application/pdf": b"%PDF-",
@@ -75,6 +78,12 @@ def _sanitize_filename(filename: str) -> str:
 
 def _check_magic_bytes(content: bytes, mime_type: str) -> bool:
     """Prueft ob die ersten Bytes des Inhalts zum MIME-Type passen."""
+    if mime_type in _XML_MIME_TYPES:
+        normalized = content.strip()
+        if normalized.startswith(b"\xef\xbb\xbf"):
+            normalized = normalized[3:]
+        return normalized.startswith(b"<")
+
     magic = _MAGIC_BYTES.get(mime_type)
     if magic is None:
         return False
@@ -119,7 +128,7 @@ async def _run_extraction_in_background(
     "",
     response_model=InvoiceFileResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Laedt eine Rechnungsdatei hoch (PDF/PNG/JPEG)",
+    summary="Laedt eine Rechnungsdatei hoch (PDF/PNG/JPEG/XML)",
     responses={
         200: {"description": "Datei existierte bereits (Deduplication), kein neuer Upload"},
         201: {"description": "Datei erfolgreich hochgeladen, Extraction gestartet"},
@@ -218,15 +227,35 @@ async def upload_invoice_file(
 
     log.info("invoice_file_uploaded", file_id=str(invoice_file.id))
 
-    # --- G2.1: Extraction als BackgroundTask starten (nur neue Dateien) ---
-    background_tasks.add_task(
-        _run_extraction_in_background,
-        engine,
-        invoice_file.id,
-        tenant,
-        ai_provider,
-        storage,
-    )
+    einvoice_handled = False
+    try:
+        einvoice_service = EinvoiceExtractionService(
+            session=session,
+            invoice_file_repo=repo,
+            invoice_repo=InvoiceRepository(session),
+        )
+        einvoice_result = await einvoice_service.try_extract(
+            tenant=tenant,
+            invoice_file=invoice_file,
+            content_provider=lambda: storage.load(invoice_file.storage_path),
+        )
+        einvoice_handled = einvoice_result is not None
+        if einvoice_handled:
+            await session.refresh(invoice_file)
+    except Exception:  # noqa: BLE001
+        logger.exception("einvoice_path_unexpected_error", file_id=str(invoice_file.id))
+        einvoice_handled = False
+
+    if not einvoice_handled:
+        # --- G2.1: Extraction als BackgroundTask starten (nur neue Dateien) ---
+        background_tasks.add_task(
+            _run_extraction_in_background,
+            engine,
+            invoice_file.id,
+            tenant,
+            ai_provider,
+            storage,
+        )
 
     response_body = InvoiceFileResponse.from_model(invoice_file)
     return Response(
@@ -308,6 +337,7 @@ async def trigger_extraction(
         error=invoice_file.extraction_error,
         result=invoice_file.extraction_result,
         linked_invoice_id=invoice_file.invoice_id,
+        extraction_method=invoice_file.extraction_method,
     )
 
 
@@ -344,6 +374,7 @@ async def get_extraction_status(
         error=invoice_file.extraction_error,
         result=invoice_file.extraction_result,
         linked_invoice_id=invoice_file.invoice_id,
+        extraction_method=invoice_file.extraction_method,
     )
 
 

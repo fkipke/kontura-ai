@@ -26,6 +26,7 @@ dependencies = [
     "pyjwt>=2.10",
     "sqlalchemy[asyncio]>=2.0",
     "pymupdf>=1.24",
+    "defusedxml>=0.7",
     "structlog>=25.5.0",
     "uvicorn[standard]>=0.46.0",
 ]

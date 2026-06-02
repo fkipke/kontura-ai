@@ -97,6 +97,9 @@ class InvoiceFile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Anzahl der Extraktionsversuche (fuer spaeteres Exponential-Backoff)
     extraction_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    # String statt DB-ENUM: neue Methoden (z.B. lokal/regelbasiert) ohne Migration erweiterbar.
+    extraction_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     __table_args__ = (
         # Deduplication: Gleiche Datei (sha256) pro Tenant nur einmal speichern
         UniqueConstraint("tenant_id", "sha256", name="uq_invoice_files_tenant_sha256"),

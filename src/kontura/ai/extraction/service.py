@@ -164,6 +164,7 @@ class ExtractionService:
             invoice_file.extraction_result = result_dict
             invoice_file.extracted_at = datetime.now(tz=timezone.utc)  # noqa: UP017
             invoice_file.extraction_error = None
+            invoice_file.extraction_method = "ai_vision"
             await self._session.commit()
 
             log.info(
