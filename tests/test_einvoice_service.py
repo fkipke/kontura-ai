@@ -233,14 +233,14 @@ async def test_duplicate_invoice_number_does_not_raise_integrity_error(
         await session.execute(
             select(InvoiceFile.id, InvoiceFile.invoice_id)
             .where(InvoiceFile.id.in_([first_id, second_id]))
+            .order_by(InvoiceFile.id)
         )
     ).all()
     assert len(invoice_file_rows) == 2
-    first_invoice_id = invoice_file_rows[0][1]
-    second_invoice_id = invoice_file_rows[1][1]
-    assert first_invoice_id is not None
-    assert second_invoice_id is not None
-    assert first_invoice_id == second_invoice_id
+    invoice_ids_by_file = {file_id: invoice_id for file_id, invoice_id in invoice_file_rows}
+    assert invoice_ids_by_file[first_id] is not None
+    assert invoice_ids_by_file[second_id] is not None
+    assert invoice_ids_by_file[first_id] == invoice_ids_by_file[second_id]
 
 
 @pytest.mark.asyncio

@@ -86,8 +86,6 @@ class EinvoiceExtractionService:
 
         try:
             invoice = await self._find_or_create_invoice(tenant, invoice_file, extracted_data)
-
-            invoice_file.invoice_id = invoice.id
             invoice_file.extraction_status = ExtractionStatus.COMPLETED
             invoice_file.extraction_result = {
                 **extracted_data.model_dump(mode="json"),
@@ -137,4 +135,5 @@ class EinvoiceExtractionService:
         )
         self._session.add(invoice)
         await self._session.flush()
+        invoice_file.invoice_id = invoice.id
         return invoice
