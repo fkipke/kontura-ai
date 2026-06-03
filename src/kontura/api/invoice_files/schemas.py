@@ -11,7 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from kontura.infra.models.invoice_file import ExtractionStatus
 
@@ -74,12 +74,20 @@ class InvoiceFileResponse(BaseModel):
     total_amount: Decimal | None = None
     currency: str | None = None
 
+    @field_validator("extraction_method", mode="before")
+    @classmethod
+    def _coerce_extraction_method(cls, value: Any) -> str | None:
+        """Normalisiert extraction_method defensiv auf str|None."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        return None
+
     @classmethod
     def from_model(cls, invoice_file: "InvoiceFile") -> "InvoiceFileResponse":
         """Projiziert ein InvoiceFile-Modell inkl. denormalisierter Extraction-Felder."""
-        base = cls.model_validate(invoice_file).model_copy(
-            update={"extraction_method": getattr(invoice_file, "extraction_method", None)}
-        )
+        base = cls.model_validate(invoice_file)
         if invoice_file.extraction_status.value == "completed" and isinstance(
             invoice_file.extraction_result, dict
         ):
