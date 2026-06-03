@@ -13,6 +13,7 @@ Alle Tests sind async und verwenden die bestehenden conftest.py-Fixtures.
 import pytest
 from httpx import AsyncClient
 
+from kontura.api.invoice_files.router import _ALLOWED_MIME_TYPES, _check_magic_bytes
 from tests.conftest import auth_headers
 
 # --- Test-Fixtures: Header fuer zwei Tenants ---
@@ -35,6 +36,7 @@ MINIMAL_PNG = (
 )
 # Minimal gueltiger JPEG-Header (SOI + App0 Marker)
 MINIMAL_JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 12
+MINIMAL_XML = b'<?xml version="1.0" encoding="UTF-8"?><Invoice></Invoice>'
 
 UPLOAD_URL = "/api/v1/invoice-files"
 
@@ -50,6 +52,14 @@ def _png_file(filename: str = "test.png") -> dict[str, tuple[str, bytes, str]]:
 
 def _jpeg_file(filename: str = "test.jpg") -> dict[str, tuple[str, bytes, str]]:
     return {"file": (filename, MINIMAL_JPEG, "image/jpeg")}
+
+
+def _xml_file(
+    filename: str = "test.xml",
+    content: bytes = MINIMAL_XML,
+    mime_type: str = "application/xml",
+) -> dict[str, tuple[str, bytes, str]]:
+    return {"file": (filename, content, mime_type)}
 
 
 # =============================================================================
@@ -91,6 +101,16 @@ async def test_upload_jpeg_returns_201(client: AsyncClient) -> None:
     assert body["deduplicated"] is False
 
 
+@pytest.mark.asyncio
+async def test_upload_xml_returns_201(client: AsyncClient) -> None:
+    """XML-Upload gibt 201 zurueck."""
+    response = await client.post(UPLOAD_URL, files=_xml_file(), headers=TENANT_A_HEADERS)
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["mime_type"] == "application/xml"
+    assert body["deduplicated"] is False
+
+
 # =============================================================================
 # 2. Validierung - Groesse, MIME-Type, Magic-Bytes
 # =============================================================================
@@ -124,6 +144,36 @@ async def test_upload_extension_spoof_returns_415(client: AsyncClient) -> None:
     spoofed_file = {"file": ("malicious.pdf", b"This is not a PDF, just text", "application/pdf")}
     response = await client.post(UPLOAD_URL, files=spoofed_file, headers=TENANT_A_HEADERS)
     assert response.status_code == 415, response.text
+
+
+def test_xml_mime_types_are_allowed() -> None:
+    """XML-MIME-Types stehen auf der Upload-Whitelist."""
+    assert {"application/xml", "text/xml"} <= _ALLOWED_MIME_TYPES
+
+
+@pytest.mark.parametrize(
+    ("content", "mime_type"),
+    [
+        (MINIMAL_XML, "application/xml"),
+        (b"\xef\xbb\xbf<?xml version='1.0'?><Invoice />", "application/xml"),
+        (b"\n  <Invoice></Invoice>", "application/xml"),
+        (b"<rsm:CrossIndustryInvoice></rsm:CrossIndustryInvoice>", "text/xml"),
+        (
+            b"\xff\xfe<\x00?\x00x\x00m\x00l\x00 \x00v\x00e\x00r\x00s\x00i\x00o\x00n\x00=\x00"
+            b'"\x001\x00.\x000\x00"\x00?\x00>\x00<\x00I\x00n\x00v\x00o\x00i\x00c\x00e\x00/\x00>\x00',
+            "application/xml",
+        ),
+    ],
+)
+def test_check_magic_bytes_accepts_xml_variants(content: bytes, mime_type: str) -> None:
+    """XML-Validierung akzeptiert gaengige Header-, BOM- und Root-Element-Varianten."""
+    assert _check_magic_bytes(content, mime_type) is True
+
+
+@pytest.mark.parametrize("mime_type", ["application/xml", "text/xml"])
+def test_check_magic_bytes_rejects_non_xml_for_xml_mime(mime_type: str) -> None:
+    """Nicht-XML-Inhalt wird trotz XML-MIME-Type abgelehnt."""
+    assert _check_magic_bytes(b"This is definitely not XML", mime_type) is False
 
 
 # =============================================================================
