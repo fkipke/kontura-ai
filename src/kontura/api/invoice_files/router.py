@@ -8,8 +8,8 @@ Eigene Datei waere sauberer fuer sehr grosse Teams - hier reicht eine Datei.
 
 Sicherheitsschichten beim Upload (in dieser Reihenfolge):
 1. Groesse: max INVOICE_FILE_MAX_BYTES (Standard: 10 MB)
-2. MIME-Type: nur PDF, PNG, JPEG erlaubt
-3. Magic-Bytes: verifiziert den echten Dateiinhalt (verhindert Extension-Spoofing)
+2. MIME-Type: nur PDF, PNG, JPEG oder XML erlaubt
+3. Datei-Signatur/XML-Header: verifiziert den echten Dateiinhalt
 4. Filename-Sanitisierung: entfernt Pfad-Komponenten, truncated auf 255 Zeichen
 """
 
@@ -56,13 +56,54 @@ router = APIRouter(prefix="/invoice-files", tags=["invoice-files"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 # Erlaubte MIME-Types und ihre Magic-Bytes (erste Bytes der Datei)
-_ALLOWED_MIME_TYPES = frozenset(["application/pdf", "image/png", "image/jpeg"])
+_ALLOWED_MIME_TYPES = frozenset(
+    [
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+        "application/xml",
+        "text/xml",
+    ]
+)
+_XML_MIME_TYPES = frozenset(["application/xml", "text/xml"])
 
 _MAGIC_BYTES: dict[str, bytes] = {
     "application/pdf": b"%PDF-",
     "image/png": b"\x89PNG",
     "image/jpeg": b"\xff\xd8\xff",
 }
+
+
+def _looks_like_xml_text(content: str) -> bool:
+    stripped = content.lstrip()
+    if stripped.startswith("<?xml"):
+        return True
+    if not stripped.startswith("<") or len(stripped) < 2:
+        return False
+    return stripped[1] in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_:"
+
+
+def _looks_like_xml(content: bytes) -> bool:
+    """Prueft defensiv auf XML-Header oder ein direktes Root-Element."""
+    if content.startswith(b"\xef\xbb\xbf"):
+        content = content[3:]
+    elif content.startswith(b"\xff\xfe"):
+        try:
+            return _looks_like_xml_text(content[2:].decode("utf-16-le"))
+        except UnicodeDecodeError:
+            return False
+    elif content.startswith(b"\xfe\xff"):
+        try:
+            return _looks_like_xml_text(content[2:].decode("utf-16-be"))
+        except UnicodeDecodeError:
+            return False
+
+    stripped = content.lstrip()
+    if stripped.startswith(b"<?xml"):
+        return True
+    if not stripped.startswith(b"<") or len(stripped) < 2:
+        return False
+    return stripped[1:2] in b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_:"
 
 
 def _sanitize_filename(filename: str) -> str:
@@ -75,6 +116,8 @@ def _sanitize_filename(filename: str) -> str:
 
 def _check_magic_bytes(content: bytes, mime_type: str) -> bool:
     """Prueft ob die ersten Bytes des Inhalts zum MIME-Type passen."""
+    if mime_type in _XML_MIME_TYPES:
+        return _looks_like_xml(content)
     magic = _MAGIC_BYTES.get(mime_type)
     if magic is None:
         return False
@@ -119,7 +162,7 @@ async def _run_extraction_in_background(
     "",
     response_model=InvoiceFileResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Laedt eine Rechnungsdatei hoch (PDF/PNG/JPEG)",
+    summary="Laedt eine Rechnungsdatei hoch (PDF/PNG/JPEG/XML)",
     responses={
         200: {"description": "Datei existierte bereits (Deduplication), kein neuer Upload"},
         201: {"description": "Datei erfolgreich hochgeladen, Extraction gestartet"},
@@ -171,7 +214,7 @@ async def upload_invoice_file(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail=(
                 f"Dateiinhalt passt nicht zum angegebenen MIME-Type '{content_type}'. "
-                "Magic-Byte-Validierung fehlgeschlagen."
+                "Dateisignatur-/XML-Validierung fehlgeschlagen."
             ),
         )
 

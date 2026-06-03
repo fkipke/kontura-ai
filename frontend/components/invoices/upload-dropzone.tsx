@@ -8,7 +8,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ApiClientError } from "@/lib/api/client";
 import { useUploadInvoice } from "@/lib/api/invoiceFiles";
 
-const ALLOWED_TYPES = ["application/pdf", "image/png", "image/jpeg"];
+const ALLOWED_TYPES = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "application/xml",
+  "text/xml",
+];
 const MAX_SIZE_BYTES = 10 * 1024 * 1024;
 
 export function UploadDropzone(): React.JSX.Element {
@@ -18,7 +24,7 @@ export function UploadDropzone(): React.JSX.Element {
 
   async function submitFile(file: File): Promise<void> {
     if (!ALLOWED_TYPES.includes(file.type)) {
-      toast.error("Nur PDF, PNG oder JPEG sind erlaubt.");
+      toast.error("Nur PDF, PNG, JPEG oder XML sind erlaubt.");
       return;
     }
     if (file.size > MAX_SIZE_BYTES) {
@@ -63,7 +69,7 @@ export function UploadDropzone(): React.JSX.Element {
       >
         <Upload className="h-7 w-7 text-muted-foreground" aria-hidden />
         <div className="space-y-1">
-          <p className="text-sm font-medium">PDF, PNG oder JPEG hier ablegen</p>
+          <p className="text-sm font-medium">PDF, PNG, JPEG oder XML hier ablegen</p>
           <p className="text-xs text-muted-foreground">oder klicken, um eine Datei auszuwählen (max. 10 MB)</p>
         </div>
         {uploadMutation.isPending && (
@@ -75,7 +81,7 @@ export function UploadDropzone(): React.JSX.Element {
           ref={inputRef}
           type="file"
           className="hidden"
-          accept="application/pdf,image/png,image/jpeg"
+          accept="application/pdf,image/png,image/jpeg,application/xml,text/xml,.xml"
           onChange={(event) => {
             const file = event.target.files?.item(0);
             if (file) {
