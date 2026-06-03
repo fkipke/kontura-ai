@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import calendar
+import uuid
 from datetime import UTC, date, datetime, timedelta
 
 import structlog
@@ -10,6 +11,7 @@ import structlog
 from kontura.api.exports.csv_writer import build_extf_buchungsstapel
 from kontura.api.exports.repository import ExportRepository
 from kontura.api.exports.schemas import DatevExportResult
+from kontura.api.vendor_mappings.service import VendorMappingService
 from kontura.core.config import settings
 from kontura.core.tenant import TenantContext
 
@@ -19,8 +21,14 @@ logger = structlog.get_logger(__name__)
 class DatevExportService:
     """Kapselt DATEV-Export-Usecase ohne HTTP-spezifische Logik."""
 
-    def __init__(self, repository: ExportRepository) -> None:
+    def __init__(
+        self,
+        repository: ExportRepository,
+        *,
+        vendor_mapping_service: VendorMappingService | None = None,
+    ) -> None:
         self._repository = repository
+        self._vendor_mapping_service = vendor_mapping_service
 
     async def export_buchungsstapel(
         self,
@@ -42,6 +50,17 @@ class DatevExportService:
             if settings.datev_fiscal_year_start <= invoice.invoice_date <= fiscal_year_end
         ]
         skipped_count = len(invoices) - len(included)
+        creditor_account_overrides: dict[uuid.UUID, int] | None = None
+        if self._vendor_mapping_service is not None:
+            creditor_account_overrides = {}
+            for invoice in included:
+                creditor_account_overrides[
+                    invoice.id
+                ] = await self._vendor_mapping_service.resolve_for_export(
+                    tenant,
+                    invoice.vendor_name,
+                    settings.datev_default_creditor_account,
+                )
 
         content = build_extf_buchungsstapel(
             included,
@@ -54,6 +73,7 @@ class DatevExportService:
             default_expense_account=settings.datev_default_expense_account,
             default_creditor_account=settings.datev_default_creditor_account,
             created_at=datetime.now(tz=UTC),
+            creditor_account_overrides=creditor_account_overrides,
         )
 
         logger.info(

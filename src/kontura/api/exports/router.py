@@ -12,6 +12,8 @@ from kontura.api.dependencies import TenantDep, TokenDep
 from kontura.api.exports.repository import ExportRepository
 from kontura.api.exports.service import DatevExportService
 from kontura.api.rate_limit import limiter
+from kontura.api.vendor_mappings.repository import VendorMappingRepository
+from kontura.api.vendor_mappings.service import VendorMappingService
 from kontura.core.config import settings
 from kontura.core.exceptions import DomainValidationError
 from kontura.infra.db import get_session
@@ -41,7 +43,9 @@ async def export_datev(
         raise DomainValidationError("Zeitraum darf max. 1 Jahr umfassen.")
 
     repository = ExportRepository(session)
-    service = DatevExportService(repository)
+    mapping_repo = VendorMappingRepository(session)
+    mapping_service = VendorMappingService(mapping_repo)
+    service = DatevExportService(repository, vendor_mapping_service=mapping_service)
     result = await service.export_buchungsstapel(
         tenant,
         from_date=from_date,

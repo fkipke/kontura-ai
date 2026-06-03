@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -107,7 +108,7 @@ def _build_data_row(
     invoice: Invoice,
     *,
     default_expense_account: int,
-    default_creditor_account: int,
+    creditor_account: int,
 ) -> str:
     invoice_number = invoice.invoice_number[:36]
     buchungstext = _truncate_buchungstext(f"{invoice.vendor_name} {invoice_number}".strip())
@@ -120,7 +121,7 @@ def _build_data_row(
         _quote(""),
         _quote(""),
         str(default_expense_account),
-        str(default_creditor_account),
+        str(creditor_account),
         _quote(""),
         _format_ttmm(invoice.invoice_date),
         _quote(invoice_number),
@@ -143,6 +144,7 @@ def build_extf_buchungsstapel(
     default_expense_account: int,
     default_creditor_account: int,
     created_at: datetime,
+    creditor_account_overrides: dict[uuid.UUID, int] | None = None,
 ) -> bytes:
     """Liefert die fertige CP1252-encodierte CSV als bytes (mit CRLF)."""
     rows = [
@@ -159,11 +161,14 @@ def build_extf_buchungsstapel(
     ]
 
     for invoice in invoices:
+        creditor_account = default_creditor_account
+        if creditor_account_overrides is not None:
+            creditor_account = creditor_account_overrides.get(invoice.id, default_creditor_account)
         rows.append(
             _build_data_row(
                 invoice,
                 default_expense_account=default_expense_account,
-                default_creditor_account=default_creditor_account,
+                creditor_account=creditor_account,
             )
         )
 

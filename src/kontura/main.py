@@ -17,6 +17,7 @@ from kontura.api.invoices import router as invoices_router
 from kontura.api.middleware import RequestContextMiddleware
 from kontura.api.rate_limit import install_rate_limiter
 from kontura.api.v1 import api_v1_router
+from kontura.api.vendor_mappings import router as vendor_mappings_router
 from kontura.core.config import settings
 from kontura.core.logging import configure_logging
 from kontura.infra.db import dispose_engine
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(invoices_router)
     app.include_router(invoice_files_router, prefix="/api/v1")
+    app.include_router(vendor_mappings_router, prefix="/api/v1")
     app.include_router(api_v1_router)
 
     return app

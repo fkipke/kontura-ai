@@ -10,6 +10,7 @@ from kontura.infra.models.invoice_file import ExtractionStatus, InvoiceFile
 from kontura.infra.models.llm_audit import LLMAuditEntry
 from kontura.infra.models.tenant import Tenant
 from kontura.infra.models.user import User
+from kontura.infra.models.vendor_account_mapping import VendorAccountMapping
 
 __all__ = [
     "EMBEDDING_DIM",
@@ -22,4 +23,5 @@ __all__ = [
     "LLMAuditEntry",
     "Tenant",
     "User",
+    "VendorAccountMapping",
 ]
