@@ -45,7 +45,7 @@ export function useInvoice(invoiceId: string) {
         { method: "GET" },
         (value) => invoiceResponseSchema.parse(value),
       ),
-    enabled: Boolean(invoiceId),
+    enabled: Boolean(invoiceId) && invoiceId.length > 0,
   });
 }
 

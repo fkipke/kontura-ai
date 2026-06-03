@@ -37,6 +37,7 @@ interface ExtractedFieldsPanelProps {
   invoice: InvoiceFile | null;
   extraction: ExtractionStatus | null;
   loading: boolean;
+  invoiceLoadError?: string | null;
   /** G3.2: verknüpftes Invoice-Objekt (editierbar) */
   invoiceData: InvoiceResponse | null;
   /** G3.2: invoiceId für PATCH-Mutations */
@@ -64,6 +65,7 @@ export function ExtractedFieldsPanel({
   invoice,
   extraction,
   loading,
+  invoiceLoadError,
   invoiceData,
   invoiceId,
   onConflictReload,
@@ -81,14 +83,16 @@ export function ExtractedFieldsPanel({
     );
   }
 
-  if (!invoice || !extraction) {
+  if (invoiceLoadError) {
     return (
       <Card>
-        <CardContent className="p-6 text-sm text-muted-foreground">
-          Rechnung konnte nicht geladen werden.
-        </CardContent>
+        <CardContent className="p-6 text-sm text-muted-foreground">{invoiceLoadError}</CardContent>
       </Card>
     );
+  }
+
+  if (!invoice || !extraction) {
+    return <div />;
   }
 
   const result = extraction.result;

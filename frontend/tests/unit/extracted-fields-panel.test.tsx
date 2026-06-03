@@ -106,16 +106,31 @@ describe("ExtractedFieldsPanel", () => {
     );
     // Skeleton-Elemente vorhanden
     expect(document.querySelector(".animate-pulse")).toBeTruthy();
+    expect(screen.queryByText(/Rechnung konnte nicht geladen werden/i)).toBeNull();
   });
 
-  it("rendert Fehlermeldung wenn kein Invoice vorhanden", () => {
+  it("rendert keine Error-Box wenn linked_invoice_id null ist", () => {
     render(
       <ExtractedFieldsPanel
-        invoice={null}
-        extraction={null}
+        invoice={baseInvoiceFile}
+        extraction={baseExtraction}
         loading={false}
         invoiceData={null}
         invoiceId={null}
+      />,
+    );
+    expect(screen.queryByText(/Rechnung konnte nicht geladen werden/i)).toBeNull();
+  });
+
+  it("rendert Error-Box nur bei echtem Invoice-Fetch-Fehler mit bekannter linked_invoice_id", () => {
+    render(
+      <ExtractedFieldsPanel
+        invoice={baseInvoiceFile}
+        extraction={baseExtraction}
+        loading={false}
+        invoiceLoadError="Rechnung konnte nicht geladen werden."
+        invoiceData={null}
+        invoiceId="invoice-456"
       />,
     );
     expect(screen.getByText(/Rechnung konnte nicht geladen werden/i)).toBeInTheDocument();

@@ -33,6 +33,7 @@ from fastapi import (
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from kontura.ai.einvoice.service import EinvoiceExtractionService
 from kontura.ai.extraction.service import ExtractionService
 from kontura.api.dependencies import (
     AIProviderDep,
@@ -43,6 +44,7 @@ from kontura.api.dependencies import (
 )
 from kontura.api.invoice_files.repository import InvoiceFileRepository
 from kontura.api.invoice_files.schemas import ExtractionStatusResponse, InvoiceFileResponse
+from kontura.api.invoices.repository import InvoiceRepository
 from kontura.api.rate_limit import limiter
 from kontura.core.config import settings
 from kontura.core.exceptions import NotFoundError
@@ -261,15 +263,48 @@ async def upload_invoice_file(
 
     log.info("invoice_file_uploaded", file_id=str(invoice_file.id))
 
-    # --- G2.1: Extraction als BackgroundTask starten (nur neue Dateien) ---
-    background_tasks.add_task(
-        _run_extraction_in_background,
-        engine,
-        invoice_file.id,
-        tenant,
-        ai_provider,
-        storage,
-    )
+    # G4.1: Versuche synchron den deterministischen E-Invoice-Pfad.
+    # Bei Erfolg: extraction_status=completed schon in der Response, kein BackgroundTask.
+    # Bei Misserfolg: silent fallback auf AI.
+    einvoice_handled = False
+    try:
+        invoice_repo = InvoiceRepository(session)
+        einvoice_service = EinvoiceExtractionService(
+            session=session,
+            invoice_file_repo=repo,
+            invoice_repo=invoice_repo,
+        )
+        result = await einvoice_service.try_extract(
+            tenant=tenant,
+            invoice_file=invoice_file,
+            content_provider=lambda: storage.load(invoice_file.storage_path),
+        )
+        if result is not None:
+            einvoice_handled = True
+            await session.refresh(invoice_file)
+            logger.info(
+                "einvoice_extraction_succeeded",
+                file_id=str(invoice_file.id),
+                method=result.extraction_method,
+                zugferd_profile=result.zugferd_profile.value if result.zugferd_profile else None,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "einvoice_path_unexpected_error",
+            file_id=str(invoice_file.id),
+            error=repr(exc),
+        )
+        einvoice_handled = False
+
+    if not einvoice_handled:
+        background_tasks.add_task(
+            _run_extraction_in_background,
+            engine,
+            invoice_file.id,
+            tenant,
+            ai_provider,
+            storage,
+        )
 
     response_body = InvoiceFileResponse.from_model(invoice_file)
     return Response(

@@ -9,6 +9,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { ExtractionMethodBadge } from "@/components/invoices/extraction-method-badge";
 import { ExtractedFieldsPanel } from "@/components/invoices/extracted-fields-panel";
+import { ApiClientError } from "@/lib/api/client";
 import { useInvoice } from "@/lib/api/invoices";
 import { useExtractionStatus, useInvoiceFiles, fetchInvoiceFileBlob } from "@/lib/api/invoiceFiles";
 import { useQuery } from "@tanstack/react-query";
@@ -35,6 +36,12 @@ export default function InvoiceDetailPage(): React.JSX.Element {
   // G3.2: linked_invoice_id aus Extraction-Status → Invoice-Daten laden
   const linkedInvoiceId = extractionQuery.data?.linked_invoice_id ?? null;
   const invoiceQuery = useInvoice(linkedInvoiceId ?? "");
+  const invoiceLoadError =
+    linkedInvoiceId !== null && invoiceQuery.isError
+      ? invoiceQuery.error instanceof ApiClientError
+        ? invoiceQuery.error.detail
+        : "Rechnung konnte nicht geladen werden."
+      : null;
 
   const handleConflictReload = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["invoice", linkedInvoiceId] });
@@ -64,6 +71,7 @@ export default function InvoiceDetailPage(): React.JSX.Element {
             invoice={invoice}
             extraction={extractionQuery.data ?? null}
             loading={listQuery.isLoading || extractionQuery.isLoading}
+            invoiceLoadError={invoiceLoadError}
             invoiceData={invoiceQuery.data ?? null}
             invoiceId={linkedInvoiceId}
             onConflictReload={handleConflictReload}

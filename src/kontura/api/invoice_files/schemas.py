@@ -66,6 +66,7 @@ class InvoiceFileResponse(BaseModel):
     deduplicated: bool = False
     # G2.1: KI-Extraktionsstatus (fuer UX: User sieht direkt was schon ausgewertet ist)
     extraction_status: ExtractionStatus = ExtractionStatus.PENDING
+    extraction_method: str | None = None
     # G3.1b: Denormalisierte Extraction-Felder fuer Listings (n+1 vermeiden).
     # Werden nur befuellt, wenn extraction_status == "completed".
     vendor_name: str | None = None
@@ -76,7 +77,9 @@ class InvoiceFileResponse(BaseModel):
     @classmethod
     def from_model(cls, invoice_file: "InvoiceFile") -> "InvoiceFileResponse":
         """Projiziert ein InvoiceFile-Modell inkl. denormalisierter Extraction-Felder."""
-        base = cls.model_validate(invoice_file)
+        base = cls.model_validate(invoice_file).model_copy(
+            update={"extraction_method": getattr(invoice_file, "extraction_method", None)}
+        )
         if invoice_file.extraction_status.value == "completed" and isinstance(
             invoice_file.extraction_result, dict
         ):
