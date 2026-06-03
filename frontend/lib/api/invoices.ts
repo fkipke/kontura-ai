@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
 
 import { ApiClientError, apiRequest } from "@/lib/api/client";
 import {
@@ -8,6 +9,27 @@ import {
   type InvoiceResponse,
   type ValidationWarning,
 } from "@/lib/api/schemas";
+
+const invoiceLineItemPayloadSchema = z.object({
+  description: z.string().nullable().optional(),
+  quantity: z.union([z.string(), z.number()]).nullable().optional(),
+  unit_price: z.union([z.string(), z.number()]).nullable().optional(),
+  total_price: z.union([z.string(), z.number()]).nullable().optional(),
+});
+
+const invoiceUpdatePayloadSchema = z.object({
+  expected_version: z.number().int().min(1),
+  vendor_name: z.string().nullable().optional(),
+  invoice_number: z.string().nullable().optional(),
+  invoice_date: z.string().nullable().optional(),
+  net_amount: z.string().nullable().optional(),
+  tax_amount: z.string().nullable().optional(),
+  total_amount: z.string().nullable().optional(),
+  currency: z.string().nullable().optional(),
+  line_items: z.array(invoiceLineItemPayloadSchema).nullable().optional(),
+  creditor_account_number: z.number().int().min(10000).max(999999).nullable().optional(),
+  is_reviewed: z.boolean().nullable().optional(),
+});
 
 // G3.2: 409-Konflikt-Response (Optimistic Lock)
 export interface ConflictResponse {
@@ -33,6 +55,13 @@ export interface InvoiceUpdatePayload {
   tax_amount?: string | null;
   total_amount?: string | null;
   currency?: string | null;
+  line_items?: Array<{
+    description?: string | null;
+    quantity?: string | number | null;
+    unit_price?: string | number | null;
+    total_price?: string | number | null;
+  }> | null;
+  creditor_account_number?: number | null;
   is_reviewed?: boolean | null;
 }
 
@@ -56,10 +85,11 @@ export function useUpdateInvoice(invoiceId: string) {
     mutationFn: async (
       payload: InvoiceUpdatePayload,
     ): Promise<{ data: InvoiceResponse; warnings: ValidationWarning[] }> => {
+      const body = invoiceUpdatePayloadSchema.parse(payload);
       const response = await fetch(`/api/proxy/invoices/${invoiceId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(body),
       });
 
       // 409 Optimistic-Lock-Konflikt: separater Fehler-Typ

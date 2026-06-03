@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 import { EditableField } from "@/components/invoices/editable-field";
@@ -25,6 +26,7 @@ import {
   type InvoiceUpdatePayload,
 } from "@/lib/api/invoices";
 import { useTriggerExtraction } from "@/lib/api/invoiceFiles";
+import { useVendorMappingSuggestion } from "@/lib/api/vendorMappings";
 import type {
   ExtractionStatus,
   InvoiceFile,
@@ -70,6 +72,21 @@ export function ExtractedFieldsPanel({
 }: ExtractedFieldsPanelProps): React.JSX.Element {
   const retryMutation = useTriggerExtraction(invoice?.id ?? "");
   const updateMutation = useUpdateInvoice(invoiceId ?? "");
+  const result = extraction?.result ?? null;
+  const displayVendor = invoiceData?.vendor_name ?? result?.vendor_name ?? null;
+  const suggestionQuery = useVendorMappingSuggestion(displayVendor);
+  const suggestion = suggestionQuery.data ?? null;
+  const creditorSuggestionKey = `${displayVendor ?? ""}:${suggestion?.creditor_account_number ?? ""}:${suggestion?.auto_apply ? "auto" : "manual"}`;
+  const [creditorDraft, setCreditorDraft] = useState<{ key: string; value: string }>({
+    key: "",
+    value: "",
+  });
+  const creditorAccount =
+    creditorDraft.key === creditorSuggestionKey
+      ? creditorDraft.value
+      : suggestion?.auto_apply
+        ? String(suggestion.creditor_account_number)
+        : "";
 
   if (loading) {
     return (
@@ -91,7 +108,6 @@ export function ExtractedFieldsPanel({
     );
   }
 
-  const result = extraction.result;
   const version = invoiceData?.version ?? 1;
   const warnings: ValidationWarning[] = invoiceData?.validation_warnings ?? [];
   const ustWarning = warnings.find((w) => w.code === "ust_total_mismatch");
@@ -157,7 +173,6 @@ export function ExtractedFieldsPanel({
   };
 
   // Wert aus invoiceData (bearbeitbar) oder Fallback auf extraction
-  const displayVendor = invoiceData?.vendor_name ?? result?.vendor_name;
   const displayInvoiceNumber = invoiceData?.invoice_number ?? result?.invoice_number;
   const displayInvoiceDate = invoiceData?.invoice_date ?? result?.invoice_date;
   const displayNet = invoiceData?.net_amount != null ? String(invoiceData.net_amount) : null;
@@ -165,6 +180,28 @@ export function ExtractedFieldsPanel({
   const displayTotal =
     invoiceData?.total_amount != null ? String(invoiceData.total_amount) : null;
   const displayCurrency = invoiceData?.currency ?? result?.currency;
+
+  const handleCreditAccountSave = async () => {
+    if (!invoiceId || !creditorAccount) return;
+    try {
+      await updateMutation.mutateAsync({
+        expected_version: version,
+        creditor_account_number: Number.parseInt(creditorAccount, 10),
+      });
+      toast.success("Kreditorkonto gespeichert.");
+    } catch (error) {
+      if (error instanceof InvoiceConflictError) {
+        toast.error("Rechnung wurde zwischenzeitlich geändert. Bitte neu laden.");
+        onConflictReload?.();
+        return;
+      }
+      if (error instanceof ApiClientError) {
+        toast.error(error.detail);
+        return;
+      }
+      toast.error("Speichern fehlgeschlagen.");
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -312,6 +349,76 @@ export function ExtractedFieldsPanel({
             </div>
 
             <Field label="Adresse" value={result?.vendor_address} />
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold tracking-tight">Kontierung</h2>
+
+            <div className="grid gap-2">
+              <label htmlFor="creditor-account" className="text-muted-foreground">
+                Kreditorkonto
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="creditor-account"
+                  type="number"
+                  min={10000}
+                  max={999999}
+                  inputMode="numeric"
+                  value={creditorAccount}
+                  onChange={(event) =>
+                    setCreditorDraft({
+                      key: creditorSuggestionKey,
+                      value: event.target.value,
+                    })
+                  }
+                  className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+                  placeholder="z. B. 70042"
+                />
+                <Button
+                  type="button"
+                  onClick={() => void handleCreditAccountSave()}
+                  disabled={updateMutation.isPending || creditorAccount.length < 4}
+                >
+                  Speichern
+                </Button>
+              </div>
+
+              {suggestion?.auto_apply && (
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="success"
+                    className="flex items-center gap-1 bg-green-600 text-white hover:bg-green-600"
+                  >
+                    <Zap className="h-3.5 w-3.5" aria-hidden />
+                    automatisch ({suggestion.usage_count}×)
+                  </Badge>
+                </div>
+              )}
+
+              {suggestion && !suggestion.auto_apply && (
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+                  <p>
+                    Vorschlag: <strong>{suggestion.creditor_account_number}</strong> (zuletzt
+                    verwendet {formatGermanDate(suggestion.last_used_at)}, {suggestion.usage_count}
+                    × gebucht)
+                  </p>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="mt-2"
+                    onClick={() =>
+                      setCreditorDraft({
+                        key: creditorSuggestionKey,
+                        value: String(suggestion.creditor_account_number),
+                      })
+                    }
+                  >
+                    Übernehmen
+                  </Button>
+                </div>
+              )}
+            </div>
           </section>
 
           {/* G3.2: USt-Mismatch-Warnung (gelbes Banner, nicht blockierend) */}
