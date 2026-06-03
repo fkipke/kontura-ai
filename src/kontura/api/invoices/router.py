@@ -20,6 +20,8 @@ from kontura.api.invoices.schemas import (
     ValidationWarning,
 )
 from kontura.api.rate_limit import limiter
+from kontura.api.vendor_mappings.repository import VendorMappingRepository
+from kontura.api.vendor_mappings.service import VendorMappingService
 from kontura.core.config import settings
 from kontura.core.exceptions import ConflictError, DomainValidationError, NotFoundError
 from kontura.infra.db import get_session
@@ -235,6 +237,13 @@ async def update_invoice(
         reviewed_at=reviewed_at,
         reviewed_by_user_id=reviewed_by_user_id,
     )
+    if payload.creditor_account_number is not None and invoice.vendor_name:
+        mapping_service = VendorMappingService(VendorMappingRepository(session))
+        await mapping_service.record_mapping(
+            tenant,
+            vendor_name_raw=invoice.vendor_name,
+            creditor_account_number=payload.creditor_account_number,
+        )
     await session.commit()
     await session.refresh(invoice)
 

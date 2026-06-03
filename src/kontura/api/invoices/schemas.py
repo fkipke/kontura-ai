@@ -80,6 +80,7 @@ class InvoiceUpdateRequest(BaseModel):
     total_amount: Decimal | None = Field(None, ge=0, max_digits=12, decimal_places=2)
     currency: str | None = Field(None, min_length=3, max_length=3)
     line_items: list[InvoiceLineItem] | None = None
+    creditor_account_number: int | None = Field(None, ge=10000, le=999999)
     is_reviewed: bool | None = None
 
 
