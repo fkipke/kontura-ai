@@ -192,6 +192,7 @@ Konfiguration: [`.github/dependabot.yml`](.github/dependabot.yml)
 - **Konfiguration:** `DATEV_CONSULTANT_NUMBER`, `DATEV_CLIENT_NUMBER`, `DATEV_FISCAL_YEAR_START`, `DATEV_ACCOUNT_LENGTH`, `DATEV_DEFAULT_EXPENSE_ACCOUNT`, `DATEV_DEFAULT_CREDITOR_ACCOUNT`
 - **Hinweis:** `BU-Schlüssel` bleibt im Export leer und wird nach dem Import in DATEV manuell gesetzt.
 - **Ausblick:** ZUGFeRD/XML folgt in G4.1, Lieferanten-Auto-Mapping folgt in G4.3.
+- **G4.2 (Frontend):** Provenance-Badges auf der Rechnungs-Detailseite zeigen den Extraktionsweg (XRechnung, ZUGFeRD, KI) inkl. MINIMUM-Profil-Warnhinweis.
 
 ---
 

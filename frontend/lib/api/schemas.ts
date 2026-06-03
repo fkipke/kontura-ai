@@ -57,6 +57,18 @@ export const invoiceStatusSchema = z.enum([
   "failed",
 ]);
 
+export const extractionMethodSchema = z.enum([
+  "xrechnung_ubl",
+  "xrechnung_cii",
+  "zugferd_v2",
+  "ai_vision",
+]).nullable();
+
+export const zugferdProfileSchema = z
+  .enum(["minimum", "basic_wl", "basic", "en16931", "extended", "xrechnung"])
+  .optional()
+  .nullable();
+
 export const invoiceFileSchema = z.object({
   id: z.string().uuid(),
   filename: z.string(),
@@ -68,6 +80,7 @@ export const invoiceFileSchema = z.object({
   extraction_status: invoiceStatusSchema,
   // G3.1b: Denormalisierte Extraction-Felder fuer Listings (n+1 vermeiden).
   // Werden nur befuellt, wenn extraction_status == "completed".
+  extraction_method: extractionMethodSchema.optional(),
   vendor_name: z.string().nullable().optional(),
   invoice_date: z.string().nullable().optional(),
   total_amount: z.union([z.string(), z.number()]).nullable().optional(),
@@ -93,6 +106,7 @@ export const extractionResultSchema = z.object({
   currency: z.string().nullish(),
   line_items: z.array(extractionLineItemSchema).nullish(),
   confidence_notes: z.string().nullish(),
+  zugferd_profile: zugferdProfileSchema,
 });
 
 export const extractionStatusSchema = z.object({

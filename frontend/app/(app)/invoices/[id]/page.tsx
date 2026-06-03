@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 
+import { ExtractionMethodBadge } from "@/components/invoices/extraction-method-badge";
 import { ExtractedFieldsPanel } from "@/components/invoices/extracted-fields-panel";
 import { useInvoice } from "@/lib/api/invoices";
 import { useExtractionStatus, useInvoiceFiles, fetchInvoiceFileBlob } from "@/lib/api/invoiceFiles";
@@ -54,7 +55,11 @@ export default function InvoiceDetailPage(): React.JSX.Element {
         <section className="lg:col-span-3">
           <PdfViewer blob={blobQuery.data ?? null} isLoading={blobQuery.isLoading} />
         </section>
-        <aside className="lg:col-span-2">
+        <aside className="space-y-3 lg:col-span-2">
+          <ExtractionMethodBadge
+            method={invoice?.extraction_method ?? null}
+            zugferdProfile={extractionQuery.data?.result?.zugferd_profile ?? null}
+          />
           <ExtractedFieldsPanel
             invoice={invoice}
             extraction={extractionQuery.data ?? null}
