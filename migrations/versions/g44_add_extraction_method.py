@@ -1,7 +1,7 @@
 """add extraction_method to invoice_files
 
 Revision ID: g44_add_extraction_method
-Revises: g43_add_vendor_account_mappings
+Revises: g43a1b2c3d4e5
 Create Date: 2026-06-06 19:45:00.000000
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "g44_add_extraction_method"
-down_revision: str | Sequence[str] | None = "g43_add_vendor_account_mappings"
+down_revision: str | Sequence[str] | None = "g43a1b2c3d4e5"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
