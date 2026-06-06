@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import inspect
 import uuid
+from ast import AsyncFunctionDef, Call, NodeVisitor, dump, parse
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from typing import cast
 
 import fitz
@@ -268,7 +270,26 @@ async def test_re_extract_normal_pdf_still_uses_ai_when_no_einvoice(
 
 
 def test_re_extract_uses_default_rate_limit_not_llm_rate_limit() -> None:
-    source = inspect.getsource(trigger_extraction)
+    original = trigger_extraction.__wrapped__
+    router_path = Path(inspect.getsourcefile(original) or "")
+    module = parse(router_path.read_text(encoding="utf-8"))
 
-    assert "@limiter.limit(settings.rate_limit_default_per_tenant)" in source
+    class TriggerExtractionDecoratorVisitor(NodeVisitor):
+        def __init__(self) -> None:
+            self.decorators: list[str] = []
+
+        def visit_AsyncFunctionDef(self, node: AsyncFunctionDef) -> None:  # type: ignore[override]
+            if node.name != "trigger_extraction":
+                return
+            for decorator in node.decorator_list:
+                if isinstance(decorator, Call):
+                    self.decorators.append(
+                        dump(decorator, annotate_fields=False, include_attributes=False)
+                    )
+
+    visitor = TriggerExtractionDecoratorVisitor()
+    visitor.visit(module)
+
+    assert any("rate_limit_default_per_tenant" in decorator for decorator in visitor.decorators)
+    assert all("rate_limit_llm_per_tenant" not in decorator for decorator in visitor.decorators)
     assert settings.rate_limit_default_per_tenant != settings.rate_limit_llm_per_tenant

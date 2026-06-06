@@ -247,6 +247,7 @@ function highlightSearchMatches(text: string, query: string): ReactNode {
   const parts: ReactNode[] = [];
   let start = 0;
   let index = text.toLowerCase().indexOf(normalizedQuery, start);
+  let matchCount = 0;
 
   while (index !== -1) {
     if (index > start) {
@@ -255,12 +256,13 @@ function highlightSearchMatches(text: string, query: string): ReactNode {
     const match = text.slice(index, index + query.length);
     parts.push(
       <mark
-        key={`${index}-${match}`}
+        key={`${index}-${matchCount}`}
         className="rounded bg-yellow-200 px-0.5 text-foreground dark:bg-yellow-500/40"
       >
         {match}
       </mark>,
     );
+    matchCount += 1;
     start = index + query.length;
     index = text.toLowerCase().indexOf(normalizedQuery, start);
   }
