@@ -261,15 +261,49 @@ async def upload_invoice_file(
 
     log.info("invoice_file_uploaded", file_id=str(invoice_file.id))
 
-    # --- G2.1: Extraction als BackgroundTask starten (nur neue Dateien) ---
-    background_tasks.add_task(
-        _run_extraction_in_background,
-        engine,
-        invoice_file.id,
-        tenant,
-        ai_provider,
-        storage,
-    )
+    # --- G4.1: Synchronous E-Invoice Fast-Path vor AI-BackgroundTask ---
+    einvoice_handled = False
+    try:
+        from kontura.ai.einvoice.service import EinvoiceExtractionService  # noqa: PLC0415
+        from kontura.api.invoices.repository import InvoiceRepository  # noqa: PLC0415
+
+        invoice_repo = InvoiceRepository(session)
+        einvoice_service = EinvoiceExtractionService(
+            session=session,
+            invoice_file_repo=repo,
+            invoice_repo=invoice_repo,
+        )
+        result = await einvoice_service.try_extract(
+            tenant=tenant,
+            invoice_file=invoice_file,
+            content_provider=lambda: storage.load(invoice_file.storage_path),
+        )
+        einvoice_handled = result is not None
+        if result is not None:
+            await session.refresh(invoice_file)
+            log.info(
+                "einvoice_extraction_succeeded",
+                file_id=str(invoice_file.id),
+                method=result.extraction_method,
+                zugferd_profile=result.zugferd_profile.value if result.zugferd_profile else None,
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.exception(
+            "einvoice_path_unexpected_error",
+            file_id=str(invoice_file.id),
+            error=repr(exc),
+        )
+        einvoice_handled = False
+
+    if not einvoice_handled:
+        background_tasks.add_task(
+            _run_extraction_in_background,
+            engine,
+            invoice_file.id,
+            tenant,
+            ai_provider,
+            storage,
+        )
 
     response_body = InvoiceFileResponse.from_model(invoice_file)
     return Response(

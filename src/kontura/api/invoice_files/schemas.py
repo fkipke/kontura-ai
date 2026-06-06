@@ -11,9 +11,9 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
-from kontura.infra.models.invoice_file import ExtractionStatus
+from kontura.infra.models.invoice_file import ExtractionMethod, ExtractionStatus
 
 if TYPE_CHECKING:
     from kontura.infra.models.invoice_file import InvoiceFile
@@ -66,12 +66,22 @@ class InvoiceFileResponse(BaseModel):
     deduplicated: bool = False
     # G2.1: KI-Extraktionsstatus (fuer UX: User sieht direkt was schon ausgewertet ist)
     extraction_status: ExtractionStatus = ExtractionStatus.PENDING
+    extraction_method: ExtractionMethod | None = None
     # G3.1b: Denormalisierte Extraction-Felder fuer Listings (n+1 vermeiden).
     # Werden nur befuellt, wenn extraction_status == "completed".
     vendor_name: str | None = None
     invoice_date: date | None = None
     total_amount: Decimal | None = None
     currency: str | None = None
+
+    @field_validator("extraction_method", mode="before")
+    @classmethod
+    def _normalize_extraction_method(cls, value: object) -> object:
+        if value is None or isinstance(value, ExtractionMethod):
+            return value
+        if isinstance(value, str):
+            return value
+        return None
 
     @classmethod
     def from_model(cls, invoice_file: "InvoiceFile") -> "InvoiceFileResponse":

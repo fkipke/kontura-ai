@@ -39,6 +39,7 @@ interface ExtractedFieldsPanelProps {
   invoice: InvoiceFile | null;
   extraction: ExtractionStatus | null;
   loading: boolean;
+  hasRetried?: boolean;
   /** G3.2: verknüpftes Invoice-Objekt (editierbar) */
   invoiceData: InvoiceResponse | null;
   /** G3.2: invoiceId für PATCH-Mutations */
@@ -66,6 +67,7 @@ export function ExtractedFieldsPanel({
   invoice,
   extraction,
   loading,
+  hasRetried = true,
   invoiceData,
   invoiceId,
   onConflictReload,
@@ -99,6 +101,15 @@ export function ExtractedFieldsPanel({
   }
 
   if (!invoice || !extraction) {
+    if (!hasRetried) {
+      return (
+        <div className="space-y-4">
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      );
+    }
     return (
       <Card>
         <CardContent className="p-6 text-sm text-muted-foreground">
