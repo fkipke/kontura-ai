@@ -4,7 +4,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
 import { ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
 import { Button } from "@/components/ui/button";
@@ -18,27 +18,15 @@ const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
 
 interface PdfViewerProps {
-  blob: Blob | null;
-  isLoading: boolean;
+  file: string;
 }
 
-export function PdfViewer({ blob, isLoading }: PdfViewerProps): React.JSX.Element {
+export function PdfViewer({ file }: PdfViewerProps): React.JSX.Element {
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [zoom, setZoom] = useState(1);
 
-  const file = useMemo(() => {
-    if (!blob) {
-      return null;
-    }
-    return URL.createObjectURL(blob);
-  }, [blob]);
-
   useEffect(() => {
-    if (!file) {
-      return;
-    }
-
     const handleKeyDown = (event: KeyboardEvent): void => {
       const tag = (document.activeElement as HTMLElement | null)?.tagName ?? "";
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
@@ -71,19 +59,7 @@ export function PdfViewer({ blob, isLoading }: PdfViewerProps): React.JSX.Elemen
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [file, pages]);
-
-  if (isLoading) {
-    return <Skeleton className="h-[70vh] w-full rounded-xl" />;
-  }
-
-  if (!file) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-sm text-muted-foreground">Vorschau wird geladen…</CardContent>
-      </Card>
-    );
-  }
+  }, [pages]);
 
   return (
     <Card className="h-full">
