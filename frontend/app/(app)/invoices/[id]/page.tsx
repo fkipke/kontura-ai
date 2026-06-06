@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
@@ -31,6 +31,20 @@ export default function InvoiceDetailPage(): React.JSX.Element {
   });
 
   const invoice = listQuery.data?.items.find((item) => item.id === id) ?? null;
+  const [hasRetried, setHasRetried] = useState(false);
+
+  useEffect(() => {
+    if (
+      !invoice &&
+      listQuery.isSuccess &&
+      !listQuery.isFetching &&
+      !hasRetried
+    ) {
+      void listQuery.refetch().finally(() => {
+        setHasRetried(true);
+      });
+    }
+  }, [invoice, listQuery.isSuccess, listQuery.isFetching, hasRetried, listQuery]);
 
   // G3.2: linked_invoice_id aus Extraction-Status → Invoice-Daten laden
   const linkedInvoiceId = extractionQuery.data?.linked_invoice_id ?? null;
@@ -64,6 +78,7 @@ export default function InvoiceDetailPage(): React.JSX.Element {
             invoice={invoice}
             extraction={extractionQuery.data ?? null}
             loading={listQuery.isLoading || extractionQuery.isLoading}
+            hasRetried={hasRetried}
             invoiceData={invoiceQuery.data ?? null}
             invoiceId={linkedInvoiceId}
             onConflictReload={handleConflictReload}

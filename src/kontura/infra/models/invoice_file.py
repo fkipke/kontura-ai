@@ -26,6 +26,13 @@ class ExtractionStatus(StrEnum):
     FAILED = "failed"
 
 
+class ExtractionMethod(StrEnum):
+    XRECHNUNG_UBL = "xrechnung_ubl"
+    XRECHNUNG_CII = "xrechnung_cii"
+    ZUGFERD_V2 = "zugferd_v2"
+    AI_VISION = "ai_vision"
+
+
 class InvoiceFile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Eine hochgeladene Quelldatei (PDF/PNG/JPG) fuer eine Eingangsrechnung.
 
@@ -90,6 +97,16 @@ class InvoiceFile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     # Letzte Fehlermeldung bei Status 'failed'
     extraction_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Deterministische oder KI-basierte Extraktionsmethode
+    extraction_method: Mapped[ExtractionMethod | None] = mapped_column(
+        SAEnum(
+            ExtractionMethod,
+            name="extraction_method",
+            values_callable=lambda enum_cls: [m.value for m in enum_cls],
+        ),
+        nullable=True,
+    )
 
     # Zeitpunkt der letzten erfolgreichen Extraktion
     extracted_at: Mapped[object | None] = mapped_column(SADateTime(timezone=True), nullable=True)

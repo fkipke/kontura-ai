@@ -2,6 +2,7 @@
 
 import { Upload } from "lucide-react";
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,6 +19,7 @@ const ALLOWED_TYPES = [
 const MAX_SIZE_BYTES = 10 * 1024 * 1024;
 
 export function UploadDropzone(): React.JSX.Element {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [active, setActive] = useState(false);
   const uploadMutation = useUploadInvoice();
@@ -35,10 +37,11 @@ export function UploadDropzone(): React.JSX.Element {
     try {
       const result = await uploadMutation.mutateAsync(file);
       if (result.deduplicatedHeader || result.item.deduplicated) {
-        toast.info("Diese Rechnung wurde bereits hochgeladen.");
-      } else {
-        toast.success("Rechnung hochgeladen. Extraktion läuft…");
+        toast.info("Diese Rechnung war bereits vorhanden — öffne den bestehenden Eintrag.");
+        router.push(`/invoices/${result.item.id}`);
+        return;
       }
+      toast.success("Rechnung hochgeladen. Extraktion läuft…");
     } catch (error) {
       if (error instanceof ApiClientError) {
         toast.error(error.detail);

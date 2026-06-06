@@ -135,6 +135,22 @@ describe("ExtractedFieldsPanel", () => {
     expect(screen.getByText(/Rechnung konnte nicht geladen werden/i)).toBeInTheDocument();
   });
 
+  it("zeigt skeleton statt fehlermeldung solange retry noch offen ist", () => {
+    render(
+      <ExtractedFieldsPanel
+        invoice={null}
+        extraction={null}
+        loading={false}
+        hasRetried={false}
+        invoiceData={null}
+        invoiceId={null}
+      />,
+    );
+
+    expect(screen.queryByText(/Rechnung konnte nicht geladen werden/i)).not.toBeInTheDocument();
+    expect(document.querySelector(".animate-pulse")).toBeTruthy();
+  });
+
   it("rendert Felder aus Extraction-Daten", () => {
     render(
       <ExtractedFieldsPanel

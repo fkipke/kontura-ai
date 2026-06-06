@@ -168,6 +168,7 @@ export function useUploadInvoice() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["invoice-files"] });
+      await queryClient.refetchQueries({ queryKey: ["invoice-files"] });
     },
   });
 }

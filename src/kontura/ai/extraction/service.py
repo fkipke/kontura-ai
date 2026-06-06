@@ -28,7 +28,7 @@ from kontura.core.config import settings
 from kontura.core.exceptions import NotFoundError
 from kontura.core.tenant import TenantContext
 from kontura.infra.models.invoice import Invoice, InvoiceStatus
-from kontura.infra.models.invoice_file import ExtractionStatus, InvoiceFile
+from kontura.infra.models.invoice_file import ExtractionMethod, ExtractionStatus, InvoiceFile
 from kontura.infra.storage import FileStorage
 
 logger = structlog.get_logger(__name__)
@@ -161,9 +161,10 @@ class ExtractionService:
             # Schritt 11: InvoiceFile aktualisieren
             invoice_file.invoice_id = invoice.id
             invoice_file.extraction_status = ExtractionStatus.COMPLETED
-            invoice_file.extraction_result = result_dict
+            invoice_file.extraction_result = extracted_data.model_dump(mode="json")
             invoice_file.extracted_at = datetime.now(tz=timezone.utc)  # noqa: UP017
             invoice_file.extraction_error = None
+            invoice_file.extraction_method = ExtractionMethod.AI_VISION
             await self._session.commit()
 
             log.info(
