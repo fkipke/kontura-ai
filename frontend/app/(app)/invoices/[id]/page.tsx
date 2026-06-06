@@ -42,6 +42,9 @@ export default function InvoiceDetailPage(): React.JSX.Element {
   // G3.2: linked_invoice_id aus Extraction-Status → Invoice-Daten laden
   const linkedInvoiceId = extractionQuery.data?.linked_invoice_id ?? null;
   const invoiceQuery = useInvoice(linkedInvoiceId ?? "");
+  const isListInitialLoading = listQuery.isLoading;
+  const isExtractionInitialLoading = extractionQuery.isLoading;
+  const isInvoiceInitialLoading = invoiceQuery.isLoading;
 
   const handleConflictReload = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["invoice", linkedInvoiceId] });
@@ -83,7 +86,9 @@ export default function InvoiceDetailPage(): React.JSX.Element {
           <ExtractedFieldsPanel
             invoice={invoice}
             extraction={extractionQuery.data ?? null}
-            loading={listQuery.isLoading || extractionQuery.isLoading}
+            isInvoiceLoading={isListInitialLoading}
+            isExtractionLoading={isExtractionInitialLoading}
+            isInvoiceDataLoading={isInvoiceInitialLoading}
             hasRetried={hasRetried}
             invoiceData={invoiceQuery.data ?? null}
             invoiceId={linkedInvoiceId}

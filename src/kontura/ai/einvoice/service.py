@@ -78,11 +78,16 @@ class EinvoiceExtractionService:
             return None
 
         try:
-            stmt = select(Invoice).where(
-                Invoice.tenant_id == tenant.tenant_id,
-                Invoice.invoice_number == extracted_data.invoice_number,
-            )
-            existing = (await self._session.execute(stmt)).scalar_one_or_none()
+            existing: Invoice | None = None
+            if invoice_file.invoice_id is not None:
+                existing = await self._session.get(Invoice, invoice_file.invoice_id)
+
+            if existing is None:
+                stmt = select(Invoice).where(
+                    Invoice.tenant_id == tenant.tenant_id,
+                    Invoice.invoice_number == extracted_data.invoice_number,
+                )
+                existing = (await self._session.execute(stmt)).scalar_one_or_none()
 
             if existing is None:
                 invoice = Invoice(
@@ -94,13 +99,24 @@ class EinvoiceExtractionService:
                     currency=extracted_data.currency,
                     net_amount=extracted_data.net_amount,
                     tax_amount=extracted_data.tax_amount,
-                    line_items=[item.model_dump(mode="json") for item in extracted_data.line_items],
+                    line_items=[
+                        item.model_dump(mode="json") for item in (extracted_data.line_items or [])
+                    ],
                     status=InvoiceStatus.PROCESSING,
                 )
                 self._session.add(invoice)
                 await self._session.flush()
             else:
                 invoice = existing
+                invoice.vendor_name = extracted_data.vendor_name
+                invoice.invoice_date = extracted_data.invoice_date
+                invoice.total_amount = extracted_data.total_amount
+                invoice.currency = extracted_data.currency
+                invoice.net_amount = extracted_data.net_amount
+                invoice.tax_amount = extracted_data.tax_amount
+                invoice.line_items = [
+                    item.model_dump(mode="json") for item in (extracted_data.line_items or [])
+                ]
 
             invoice_file.invoice_id = invoice.id
             invoice_file.extraction_status = ExtractionStatus.COMPLETED

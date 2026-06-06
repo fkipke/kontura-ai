@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
+from decimal import Decimal
 from typing import cast
 
 import fitz
 import pytest
 from httpx import AsyncClient
+from limits import parse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import kontura.api.invoice_files.router  # noqa: F401
+from kontura.api.rate_limit import limiter
+from kontura.core.config import settings
+from kontura.infra.models.invoice import Invoice, InvoiceStatus
 from kontura.infra.models.invoice_file import ExtractionMethod, ExtractionStatus, InvoiceFile
 from tests.conftest import FakeAIProvider, auth_headers
 
@@ -60,6 +67,12 @@ async def _set_legacy_failed_status(session: AsyncSession, file_id: str) -> None
     await session.commit()
 
 
+async def _get_invoice_file(session: AsyncSession, file_id: str) -> InvoiceFile:
+    file_uuid = uuid.UUID(file_id)
+    result = await session.execute(select(InvoiceFile).where(InvoiceFile.id == file_uuid))
+    return result.scalar_one()
+
+
 @pytest.mark.asyncio
 async def test_re_extract_heals_old_failed_xml_invoice(
     client: AsyncClient,
@@ -88,7 +101,63 @@ async def test_re_extract_heals_old_failed_xml_invoice(
 
 
 @pytest.mark.asyncio
-async def test_re_extract_xml_with_invalid_content_returns_failed_without_ai_call(
+async def test_re_extract_with_existing_invoice_id_updates_not_inserts(
+    client: AsyncClient,
+    session: AsyncSession,
+    fake_ai_provider: FakeAIProvider,
+) -> None:
+    upload = await client.post(
+        BASE_URL,
+        files={"file": ("RE_1.xml", UBL_MINIMAL.encode("utf-8"), "application/xml")},
+        headers=HEADERS,
+    )
+    assert upload.status_code == 201
+    file_id = upload.json()["id"]
+
+    existing_invoice = Invoice(
+        tenant_id="acme-corp",
+        invoice_number="OLD-RE-001",
+        vendor_name="Legacy Vendor GmbH",
+        invoice_date=date(2025, 1, 1),
+        total_amount=Decimal("1.00"),
+        currency="USD",
+        net_amount=Decimal("0.84"),
+        tax_amount=Decimal("0.16"),
+        line_items=None,
+        status=InvoiceStatus.PROCESSING,
+    )
+    session.add(existing_invoice)
+    await session.flush()
+
+    await _set_legacy_failed_status(session, file_id)
+    invoice_file = await _get_invoice_file(session, file_id)
+    invoice_file.invoice_id = existing_invoice.id
+    await session.commit()
+
+    count_before = len((await session.execute(select(Invoice))).scalars().all())
+    call_count_before = fake_ai_provider.extract_call_count
+
+    response = await client.post(f"{BASE_URL}/{file_id}/extract", headers=HEADERS)
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "completed"
+    assert fake_ai_provider.extract_call_count == call_count_before
+
+    invoices = (await session.execute(select(Invoice))).scalars().all()
+    assert len(invoices) == count_before
+
+    await session.refresh(existing_invoice)
+    assert str(existing_invoice.id) == body["linked_invoice_id"]
+    assert existing_invoice.invoice_number == "OLD-RE-001"
+    assert existing_invoice.vendor_name == "Bauer Consulting GmbH"
+    assert str(existing_invoice.total_amount) == "119.00"
+    assert existing_invoice.currency == "EUR"
+    assert existing_invoice.line_items == []
+
+
+@pytest.mark.asyncio
+async def test_re_extract_xml_invalid_content_returns_failed_no_ai_call(
     client: AsyncClient,
     session: AsyncSession,
     fake_ai_provider: FakeAIProvider,
@@ -111,6 +180,39 @@ async def test_re_extract_xml_with_invalid_content_returns_failed_without_ai_cal
     body = response.json()
     assert body["status"] == "failed"
     assert "XML konnte nicht als E-Rechnung interpretiert werden" in (body["error"] or "")
+    assert fake_ai_provider.extract_call_count == call_count_before
+
+
+@pytest.mark.asyncio
+async def test_re_extract_xml_does_not_call_ai_vision_under_any_circumstances(
+    client: AsyncClient,
+    session: AsyncSession,
+    fake_ai_provider: FakeAIProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _raise(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "kontura.ai.einvoice.service.EinvoiceExtractionService.try_extract",
+        _raise,
+    )
+
+    upload = await client.post(
+        BASE_URL,
+        files={"file": ("broken.xml", UBL_MINIMAL.encode("utf-8"), "application/xml")},
+        headers=HEADERS,
+    )
+    assert upload.status_code == 201
+    file_id = upload.json()["id"]
+
+    await _set_legacy_failed_status(session, file_id)
+
+    call_count_before = fake_ai_provider.extract_call_count
+    response = await client.post(f"{BASE_URL}/{file_id}/extract", headers=HEADERS)
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "failed"
     assert fake_ai_provider.extract_call_count == call_count_before
 
 
@@ -143,7 +245,7 @@ async def test_re_extract_zugferd_pdf_falls_through_to_einvoice(
 
 
 @pytest.mark.asyncio
-async def test_re_extract_normal_pdf_still_uses_ai(
+async def test_re_extract_normal_pdf_still_uses_ai_when_no_einvoice(
     client: AsyncClient,
     session: AsyncSession,
     fake_ai_provider: FakeAIProvider,
@@ -164,3 +266,10 @@ async def test_re_extract_normal_pdf_still_uses_ai(
     assert response.status_code == 202
     assert response.json()["status"] == "completed"
     assert fake_ai_provider.extract_call_count > call_count_before
+
+
+def test_re_extract_uses_default_rate_limit_not_llm_rate_limit() -> None:
+    route_limit = limiter._route_limits["kontura.api.invoice_files.router.trigger_extraction"][0]
+
+    assert str(route_limit.limit) == str(parse(settings.rate_limit_default_per_tenant))
+    assert settings.rate_limit_default_per_tenant != settings.rate_limit_llm_per_tenant
