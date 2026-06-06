@@ -48,6 +48,7 @@ from kontura.core.config import settings
 from kontura.core.exceptions import NotFoundError
 from kontura.core.tenant import TenantContext, current_tenant_var
 from kontura.infra.db import get_session
+from kontura.infra.models.invoice_file import ExtractionStatus, InvoiceFile
 
 logger = structlog.get_logger(__name__)
 
@@ -122,6 +123,19 @@ def _check_magic_bytes(content: bytes, mime_type: str) -> bool:
     if magic is None:
         return False
     return content[: len(magic)] == magic
+
+
+def _build_extraction_status_response(invoice_file: InvoiceFile) -> ExtractionStatusResponse:
+    """Erstellt den standardisierten Extraction-Status-Response."""
+    return ExtractionStatusResponse(
+        file_id=invoice_file.id,
+        status=invoice_file.extraction_status.value,
+        attempts=invoice_file.extraction_attempts,
+        extracted_at=invoice_file.extracted_at,  # type: ignore[arg-type]
+        error=invoice_file.extraction_error,
+        result=invoice_file.extraction_result,
+        linked_invoice_id=invoice_file.invoice_id,
+    )
 
 
 async def _run_extraction_in_background(
@@ -366,7 +380,59 @@ async def trigger_extraction(
     ai_provider: AIProviderDep,
     force: Annotated[bool, Query(description="force=true erzwingt Re-Extraktion")] = False,
 ) -> ExtractionStatusResponse:
-    """Fuehrt die KI-Extraktion inline durch und gibt den aktuellen Status zurueck."""
+    """Triggert Re-Extraktion mit E-Invoice-Fast-Path vor AI-Fallback."""
+    repo = InvoiceFileRepository(session)
+    invoice_file = await repo.get_by_id(tenant, file_id)
+    if invoice_file is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"InvoiceFile mit id={file_id} nicht gefunden",
+        )
+
+    einvoice_result = None
+    try:
+        from kontura.ai.einvoice.service import EinvoiceExtractionService  # noqa: PLC0415
+        from kontura.api.invoices.repository import InvoiceRepository  # noqa: PLC0415
+
+        invoice_repo = InvoiceRepository(session)
+        einvoice_service = EinvoiceExtractionService(
+            session=session,
+            invoice_file_repo=repo,
+            invoice_repo=invoice_repo,
+        )
+        storage_path = invoice_file.storage_path
+        einvoice_result = await einvoice_service.try_extract(
+            tenant=tenant,
+            invoice_file=invoice_file,
+            content_provider=lambda: storage.load(storage_path),
+        )
+        if einvoice_result is not None:
+            await session.refresh(invoice_file)
+            logger.info(
+                "einvoice_re_extraction_succeeded",
+                file_id=str(file_id),
+                method=einvoice_result.extraction_method,
+            )
+            return _build_extraction_status_response(invoice_file)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "einvoice_re_extraction_unexpected_error",
+            file_id=str(file_id),
+            error=repr(exc),
+        )
+
+    if invoice_file.mime_type in _XML_MIME_TYPES and einvoice_result is None:
+        invoice_file.extraction_status = ExtractionStatus.FAILED
+        invoice_file.extraction_attempts = (invoice_file.extraction_attempts or 0) + 1
+        invoice_file.extraction_error = (
+            "XML konnte nicht als E-Rechnung interpretiert werden (kein UBL/CII-Root-Element)."
+        )
+        invoice_file.extraction_result = None
+        invoice_file.invoice_id = None
+        await session.commit()
+        await session.refresh(invoice_file)
+        return _build_extraction_status_response(invoice_file)
+
     service = ExtractionService(
         ai_provider=ai_provider,
         storage=storage,
@@ -377,15 +443,7 @@ async def trigger_extraction(
     except NotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    return ExtractionStatusResponse(
-        file_id=invoice_file.id,
-        status=invoice_file.extraction_status.value,
-        attempts=invoice_file.extraction_attempts,
-        extracted_at=invoice_file.extracted_at,  # type: ignore[arg-type]
-        error=invoice_file.extraction_error,
-        result=invoice_file.extraction_result,
-        linked_invoice_id=invoice_file.invoice_id,
-    )
+    return _build_extraction_status_response(invoice_file)
 
 
 @router.get(

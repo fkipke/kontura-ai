@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
@@ -9,14 +8,10 @@ import { ArrowLeft } from "lucide-react";
 
 import { ExtractionMethodBadge } from "@/components/invoices/extraction-method-badge";
 import { ExtractedFieldsPanel } from "@/components/invoices/extracted-fields-panel";
+import { UniversalFileViewer } from "@/components/invoices/viewers/universal-file-viewer";
+import { Card, CardContent } from "@/components/ui/card";
 import { useInvoice } from "@/lib/api/invoices";
-import { useExtractionStatus, useInvoiceFiles, fetchInvoiceFileBlob } from "@/lib/api/invoiceFiles";
-import { useQuery } from "@tanstack/react-query";
-
-const PdfViewer = dynamic(
-  () => import("@/components/invoices/pdf-viewer").then((module) => module.PdfViewer),
-  { ssr: false },
-);
+import { useExtractionStatus, useInvoiceFiles } from "@/lib/api/invoiceFiles";
 
 export default function InvoiceDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
@@ -25,10 +20,6 @@ export default function InvoiceDetailPage(): React.JSX.Element {
 
   const listQuery = useInvoiceFiles();
   const extractionQuery = useExtractionStatus(id);
-  const blobQuery = useQuery({
-    queryKey: ["invoice-blob", id],
-    queryFn: () => fetchInvoiceFileBlob(id),
-  });
 
   const invoice = listQuery.data?.items.find((item) => item.id === id) ?? null;
   const [hasRetried, setHasRetried] = useState(false);
@@ -69,7 +60,20 @@ export default function InvoiceDetailPage(): React.JSX.Element {
       </div>
       <main className="grid min-h-[calc(100vh-8rem)] grid-cols-1 gap-4 lg:grid-cols-5">
         <section className="lg:col-span-3">
-          <PdfViewer blob={blobQuery.data ?? null} isLoading={blobQuery.isLoading} />
+          {invoice ? (
+            <UniversalFileViewer
+              fileId={invoice.id}
+              filename={invoice.filename}
+              mimeType={invoice.mime_type}
+              fileUrl={`/api/proxy/api/v1/invoice-files/${invoice.id}`}
+            />
+          ) : (
+            <Card>
+              <CardContent className="py-8 text-sm text-muted-foreground">
+                Vorschau wird geladen…
+              </CardContent>
+            </Card>
+          )}
         </section>
         <aside className="space-y-3 lg:col-span-2">
           <ExtractionMethodBadge
