@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -8,12 +9,10 @@ from typing import cast
 import fitz
 import pytest
 from httpx import AsyncClient
-from limits import parse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import kontura.api.invoice_files.router  # noqa: F401
-from kontura.api.rate_limit import limiter
+from kontura.api.invoice_files.router import trigger_extraction
 from kontura.core.config import settings
 from kontura.infra.models.invoice import Invoice, InvoiceStatus
 from kontura.infra.models.invoice_file import ExtractionMethod, ExtractionStatus, InvoiceFile
@@ -269,7 +268,7 @@ async def test_re_extract_normal_pdf_still_uses_ai_when_no_einvoice(
 
 
 def test_re_extract_uses_default_rate_limit_not_llm_rate_limit() -> None:
-    route_limit = limiter._route_limits["kontura.api.invoice_files.router.trigger_extraction"][0]
+    source = inspect.getsource(trigger_extraction)
 
-    assert str(route_limit.limit) == str(parse(settings.rate_limit_default_per_tenant))
+    assert "@limiter.limit(settings.rate_limit_default_per_tenant)" in source
     assert settings.rate_limit_default_per_tenant != settings.rate_limit_llm_per_tenant
