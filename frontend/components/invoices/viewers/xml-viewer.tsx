@@ -124,7 +124,7 @@ function highlightXmlLine(line: string): React.JSX.Element {
   return (
     <>
       {tokens.map((token, index) => (
-        <span key={`${index}-${token.text}`} className={tokenClassName(token.type)}>
+        <span key={index} className={tokenClassName(token.type)}>
           {token.text}
         </span>
       ))}
@@ -236,7 +236,7 @@ export function XmlViewer({ fileUrl, filename }: XmlViewerProps): React.JSX.Elem
       <div className="flex-1 overflow-auto rounded-lg bg-muted/30 p-3">
         <pre className="font-mono leading-relaxed" style={{ fontSize: `${fontSize}px` }}>
           {lines.map((line, index) => (
-            <div key={`${index}-${line}`} className="flex gap-3">
+            <div key={index} className="flex gap-3">
               <span className="select-none text-right text-muted-foreground/60" style={{ minWidth: "3ch" }}>
                 {index + 1}
               </span>
