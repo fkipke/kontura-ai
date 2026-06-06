@@ -150,7 +150,7 @@ async def test_re_extract_with_existing_invoice_id_updates_not_inserts(
 
     await session.refresh(existing_invoice)
     assert str(existing_invoice.id) == body["linked_invoice_id"]
-    assert existing_invoice.invoice_number == "OLD-RE-001"
+    assert existing_invoice.invoice_number == "RE-2026-REEXTRACT"
     assert existing_invoice.vendor_name == "Bauer Consulting GmbH"
     assert str(existing_invoice.total_amount) == "119.00"
     assert existing_invoice.currency == "EUR"
@@ -278,7 +278,7 @@ def test_re_extract_uses_default_rate_limit_not_llm_rate_limit() -> None:
         def __init__(self) -> None:
             self.decorators: list[str] = []
 
-        def visit_AsyncFunctionDef(self, node: AsyncFunctionDef) -> None:  # type: ignore[override]
+        def visit_AsyncFunctionDef(self, node: AsyncFunctionDef) -> None:
             if node.name != "trigger_extraction":
                 return
             for decorator in node.decorator_list:

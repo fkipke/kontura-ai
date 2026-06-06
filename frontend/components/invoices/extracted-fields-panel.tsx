@@ -533,7 +533,7 @@ export function ExtractedFieldsPanel({
               <span className="text-muted-foreground">Gesamt</span>
               {canEditInvoice ? (
                 <EditableField
-                  value={displayTotal ?? formatCurrency(result?.total_amount ?? invoice.total_amount ?? null)}
+                  value={displayTotal ?? formatCurrency(result?.total_amount ?? null)}
                   label="Gesamtbetrag"
                   onSave={(v) => void handleSave("total_amount", v)}
                   isPending={updateMutation.isPending}

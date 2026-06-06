@@ -321,6 +321,15 @@ export function XmlViewer({ fileUrl, filename }: XmlViewerProps): React.JSX.Elem
       line.segments.some((segment) => segment.text.toLowerCase().includes(normalizedQuery)),
     );
   }, [lines, searchQuery]);
+  const indentGuidesByDepth = useMemo(() => {
+    const guides = new Map<number, number[]>();
+    for (const line of filteredLines) {
+      if (!guides.has(line.indent)) {
+        guides.set(line.indent, Array.from({ length: line.indent }, (_, index) => index));
+      }
+    }
+    return guides;
+  }, [filteredLines]);
 
   const handleCopy = async (): Promise<void> => {
     if (!content) {
@@ -433,7 +442,7 @@ export function XmlViewer({ fileUrl, filename }: XmlViewerProps): React.JSX.Elem
                     {line.number}
                   </span>
                   <div className="flex min-w-0 flex-1">
-                    {Array.from({ length: line.indent }).map((_, index) => (
+                    {(indentGuidesByDepth.get(line.indent) ?? []).map((index) => (
                       <span
                         key={`${line.number}-indent-${index}`}
                         data-testid="xml-indent-guide"
@@ -443,10 +452,7 @@ export function XmlViewer({ fileUrl, filename }: XmlViewerProps): React.JSX.Elem
                     ))}
                     <span className="min-w-0 whitespace-pre">
                       {line.segments.map((segment, index) => (
-                        <span
-                          key={`${line.number}-${index}-${segment.text}`}
-                          className={segmentClass(segment.type)}
-                        >
+                        <span key={`${line.number}-${index}`} className={segmentClass(segment.type)}>
                           {highlightSearchMatches(segment.text, searchQuery)}
                         </span>
                       ))}

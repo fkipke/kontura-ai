@@ -108,6 +108,7 @@ class EinvoiceExtractionService:
                 await self._session.flush()
             else:
                 invoice = existing
+                invoice.invoice_number = extracted_data.invoice_number
                 invoice.vendor_name = extracted_data.vendor_name
                 invoice.invoice_date = extracted_data.invoice_date
                 invoice.total_amount = extracted_data.total_amount
