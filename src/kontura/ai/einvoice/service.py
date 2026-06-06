@@ -122,5 +122,10 @@ class EinvoiceExtractionService:
                 zugferd_profile=profile,
             )
         except Exception:  # noqa: BLE001
+            logger.exception(
+                "einvoice_extraction_unexpected_error",
+                file_id=str(invoice_file.id),
+                tenant_id=tenant.tenant_id,
+            )
             await self._session.rollback()
             raise

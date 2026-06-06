@@ -37,7 +37,7 @@ export function UploadDropzone(): React.JSX.Element {
     try {
       const result = await uploadMutation.mutateAsync(file);
       if (result.deduplicatedHeader || result.item.deduplicated) {
-        toast.info("Diese Rechnung war bereits vorhanden — öffne den bestehenden Eintrag.");
+        toast.info("Diese Rechnung war bereits vorhanden - öffne den bestehenden Eintrag.");
         router.push(`/invoices/${result.item.id}`);
         return;
       }
