@@ -386,7 +386,7 @@ export function ExtractedFieldsPanel({
                   label="Lieferant"
                   onSave={(v) => void handleSave("vendor_name", v)}
                   isPending={updateMutation.isPending}
-                  isModified={isFieldModified(invoiceData?.vendor_name, result?.vendor_name                  )}
+                  isModified={isFieldModified(invoiceData?.vendor_name, result?.vendor_name)}
                 />
               ) : (
                 renderValue(displayVendor)
