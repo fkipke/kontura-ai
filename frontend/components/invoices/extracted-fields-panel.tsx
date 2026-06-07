@@ -38,7 +38,10 @@ import { formatCurrency, formatGermanDate, formatGermanDateTime } from "@/lib/fo
 interface ExtractedFieldsPanelProps {
   invoice: InvoiceFile | null;
   extraction: ExtractionStatus | null;
-  loading: boolean;
+  loading?: boolean;
+  isInvoiceLoading?: boolean;
+  isExtractionLoading?: boolean;
+  isInvoiceDataLoading?: boolean;
   hasRetried?: boolean;
   /** G3.2: verknüpftes Invoice-Objekt (editierbar) */
   invoiceData: InvoiceResponse | null;
@@ -66,16 +69,24 @@ function isFieldModified(
 export function ExtractedFieldsPanel({
   invoice,
   extraction,
-  loading,
+  loading = false,
+  isInvoiceLoading,
+  isExtractionLoading,
+  isInvoiceDataLoading,
   hasRetried = true,
   invoiceData,
   invoiceId,
   onConflictReload,
 }: ExtractedFieldsPanelProps): React.JSX.Element {
+  const effectiveInvoiceLoading = isInvoiceLoading ?? loading;
+  const effectiveExtractionLoading = isExtractionLoading ?? loading;
+  const effectiveInvoiceDataLoading = isInvoiceDataLoading ?? loading;
   const retryMutation = useTriggerExtraction(invoice?.id ?? "");
   const updateMutation = useUpdateInvoice(invoiceId ?? "");
   const result = extraction?.result ?? null;
-  const displayVendor = invoiceData?.vendor_name ?? result?.vendor_name ?? null;
+  const canEditInvoice = Boolean(invoiceId && invoiceData);
+  const displayStatus = extraction?.status ?? invoice?.extraction_status ?? "pending";
+  const displayVendor = invoiceData?.vendor_name ?? result?.vendor_name ?? invoice?.vendor_name ?? null;
   const suggestionQuery = useVendorMappingSuggestion(displayVendor);
   const suggestion = suggestionQuery.data ?? null;
   const creditorSuggestionKey = `${displayVendor ?? ""}:${suggestion?.creditor_account_number ?? ""}:${suggestion?.auto_apply ? "auto" : "manual"}`;
@@ -90,26 +101,16 @@ export function ExtractedFieldsPanel({
         ? String(suggestion.creditor_account_number)
         : "";
 
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-40" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
-  }
-
-  if (!invoice || !extraction) {
-    if (!hasRetried) {
+  if (!invoice) {
+    if (!hasRetried || effectiveInvoiceLoading) {
       return (
-        <div className="space-y-4">
-          <Skeleton className="h-8 w-40" />
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-64 w-full" />
+        <div className="space-y-3">
+          <Skeleton className="h-6 w-32" />
+          <Skeleton className="h-20 w-full" />
         </div>
       );
     }
+
     return (
       <Card>
         <CardContent className="p-6 text-sm text-muted-foreground">
@@ -185,12 +186,18 @@ export function ExtractedFieldsPanel({
 
   // Wert aus invoiceData (bearbeitbar) oder Fallback auf extraction
   const displayInvoiceNumber = invoiceData?.invoice_number ?? result?.invoice_number;
-  const displayInvoiceDate = invoiceData?.invoice_date ?? result?.invoice_date;
+  const displayInvoiceDate = invoiceData?.invoice_date ?? result?.invoice_date ?? invoice.invoice_date;
   const displayNet = invoiceData?.net_amount != null ? String(invoiceData.net_amount) : null;
   const displayTax = invoiceData?.tax_amount != null ? String(invoiceData.tax_amount) : null;
   const displayTotal =
-    invoiceData?.total_amount != null ? String(invoiceData.total_amount) : null;
-  const displayCurrency = invoiceData?.currency ?? result?.currency;
+    invoiceData?.total_amount != null
+      ? String(invoiceData.total_amount)
+      : result?.total_amount != null
+        ? String(result.total_amount)
+        : invoice.total_amount != null
+          ? String(invoice.total_amount)
+          : null;
+  const displayCurrency = invoiceData?.currency ?? result?.currency ?? invoice.currency;
 
   const handleCreditAccountSave = async () => {
     if (!invoiceId || !creditorAccount) return;
@@ -228,7 +235,7 @@ export function ExtractedFieldsPanel({
       </div>
 
       {/* G3.2: Geprüft-Badge oder Button */}
-      {invoiceData && (
+      {invoiceData ? (
         <div className="flex items-center justify-between">
           {invoiceData.is_reviewed ? (
             <Badge
@@ -249,26 +256,40 @@ export function ExtractedFieldsPanel({
             </Button>
           )}
         </div>
-      )}
+      ) : effectiveInvoiceDataLoading ? (
+        <Skeleton className="h-9 w-40" />
+      ) : null}
 
       <Card>
         <CardContent className="space-y-2 p-4 text-sm">
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Status</span>
-            <StatusBadge status={extraction.status} />
+            <StatusBadge status={displayStatus} />
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Extrahiert am</span>
-            <span>{formatGermanDateTime(extraction.extracted_at)}</span>
+            {extraction ? (
+              <span>{formatGermanDateTime(extraction.extracted_at)}</span>
+            ) : effectiveExtractionLoading ? (
+              <Skeleton className="h-4 w-28" />
+            ) : (
+              <span className="text-muted-foreground">Status wird geladen…</span>
+            )}
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Versuche</span>
-            <span className="font-tnum">{extraction.attempts}</span>
+            {extraction ? (
+              <span className="font-tnum">{extraction.attempts}</span>
+            ) : effectiveExtractionLoading ? (
+              <Skeleton className="h-4 w-10" />
+            ) : (
+              <span className="font-tnum">–</span>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {extraction.status === "failed" && (
+      {extraction?.status === "failed" && (
         <Card className="border-destructive/30 bg-destructive/10">
           <CardContent className="space-y-3 p-4 text-sm">
             <p className="font-medium text-destructive">Extraktion fehlgeschlagen</p>
@@ -278,11 +299,24 @@ export function ExtractedFieldsPanel({
               variant="destructive"
               onClick={async () => {
                 try {
-                  await retryMutation.mutateAsync();
+                  const newStatus = await retryMutation.mutateAsync();
+                  if (newStatus.status === "failed") {
+                    toast.error(
+                      newStatus.error
+                        ? `Re-Extraktion: ${newStatus.error}`
+                        : "Re-Extraktion fehlgeschlagen.",
+                    );
+                    return;
+                  }
                   toast.success("Extraktion wurde erneut gestartet.");
                 } catch (error) {
+                  console.error("Re-extract failed:", error);
                   if (error instanceof ApiClientError) {
-                    toast.error(error.detail);
+                    toast.error(`Fehler ${error.status}: ${error.detail}`);
+                    return;
+                  }
+                  if (error instanceof Error) {
+                    toast.error(`Fehler: ${error.message}`);
                     return;
                   }
                   toast.error("Extraktion konnte nicht gestartet werden.");
@@ -304,7 +338,7 @@ export function ExtractedFieldsPanel({
             {/* Rechnungsnummer: editierbar wenn invoiceData vorhanden */}
             <div className="grid grid-cols-2 gap-3">
               <span className="text-muted-foreground">Rechnungsnummer</span>
-              {invoiceId ? (
+              {canEditInvoice ? (
                 <EditableField
                   value={displayInvoiceNumber}
                   label="Rechnungsnummer"
@@ -316,13 +350,13 @@ export function ExtractedFieldsPanel({
                   )}
                 />
               ) : (
-                renderValue(result?.invoice_number)
+                renderValue(displayInvoiceNumber)
               )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <span className="text-muted-foreground">Rechnungsdatum</span>
-              {invoiceId ? (
+              {canEditInvoice ? (
                 <EditableField
                   value={displayInvoiceDate}
                   label="Rechnungsdatum"
@@ -335,7 +369,7 @@ export function ExtractedFieldsPanel({
                   )}
                 />
               ) : (
-                renderValue(formatGermanDate(result?.invoice_date ?? null))
+                renderValue(formatGermanDate(displayInvoiceDate ?? null))
               )}
             </div>
 
@@ -346,7 +380,7 @@ export function ExtractedFieldsPanel({
 
             <div className="grid grid-cols-2 gap-3">
               <span className="text-muted-foreground">Lieferant</span>
-              {invoiceId ? (
+              {canEditInvoice ? (
                 <EditableField
                   value={displayVendor}
                   label="Lieferant"
@@ -355,82 +389,84 @@ export function ExtractedFieldsPanel({
                   isModified={isFieldModified(invoiceData?.vendor_name, result?.vendor_name)}
                 />
               ) : (
-                renderValue(result?.vendor_name)
+                renderValue(displayVendor)
               )}
             </div>
 
             <Field label="Adresse" value={result?.vendor_address} />
           </section>
 
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold tracking-tight">Kontierung</h2>
+          {displayVendor && (
+            <section className="space-y-3">
+              <h2 className="text-sm font-semibold tracking-tight">Kontierung</h2>
 
-            <div className="grid gap-2">
-              <label htmlFor="creditor-account" className="text-muted-foreground">
-                Kreditorkonto
-              </label>
-              <div className="flex gap-2">
-                <input
-                  id="creditor-account"
-                  type="number"
-                  min={10000}
-                  max={999999}
-                  inputMode="numeric"
-                  value={creditorAccount}
-                  onChange={(event) =>
-                    setCreditorDraft({
-                      key: creditorSuggestionKey,
-                      value: event.target.value,
-                    })
-                  }
-                  className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
-                  placeholder="z. B. 70042"
-                />
-                <Button
-                  type="button"
-                  onClick={() => void handleCreditAccountSave()}
-                  disabled={updateMutation.isPending || creditorAccount.length < 4}
-                >
-                  Speichern
-                </Button>
-              </div>
-
-              {suggestion?.auto_apply && (
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant="success"
-                    className="flex items-center gap-1 bg-green-600 text-white hover:bg-green-600"
-                  >
-                    <Zap className="h-3.5 w-3.5" aria-hidden />
-                    automatisch ({suggestion.usage_count}×)
-                  </Badge>
-                </div>
-              )}
-
-              {suggestion && !suggestion.auto_apply && (
-                <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
-                  <p>
-                    Vorschlag: <strong>{suggestion.creditor_account_number}</strong> (zuletzt
-                    verwendet {formatGermanDate(suggestion.last_used_at)}, {suggestion.usage_count}
-                    × gebucht)
-                  </p>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="mt-2"
-                    onClick={() =>
+              <div className="grid gap-2">
+                <label htmlFor="creditor-account" className="text-muted-foreground">
+                  Kreditorkonto
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="creditor-account"
+                    type="number"
+                    min={10000}
+                    max={999999}
+                    inputMode="numeric"
+                    value={creditorAccount}
+                    onChange={(event) =>
                       setCreditorDraft({
                         key: creditorSuggestionKey,
-                        value: String(suggestion.creditor_account_number),
+                        value: event.target.value,
                       })
                     }
+                    className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+                    placeholder="z. B. 70042"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => void handleCreditAccountSave()}
+                    disabled={updateMutation.isPending || creditorAccount.length < 4}
                   >
-                    Übernehmen
+                    Speichern
                   </Button>
                 </div>
-              )}
-            </div>
-          </section>
+
+                {suggestion?.auto_apply && (
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant="success"
+                      className="flex items-center gap-1 bg-green-600 text-white hover:bg-green-600"
+                    >
+                      <Zap className="h-3.5 w-3.5" aria-hidden />
+                      automatisch ({suggestion.usage_count}×)
+                    </Badge>
+                  </div>
+                )}
+
+                {suggestion && !suggestion.auto_apply && (
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+                    <p>
+                      Vorschlag: <strong>{suggestion.creditor_account_number}</strong> (zuletzt
+                      verwendet {formatGermanDate(suggestion.last_used_at)}, {suggestion.usage_count}
+                      × gebucht)
+                    </p>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="mt-2"
+                      onClick={() =>
+                        setCreditorDraft({
+                          key: creditorSuggestionKey,
+                          value: String(suggestion.creditor_account_number),
+                        })
+                      }
+                    >
+                      Übernehmen
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
 
           {/* G3.2: USt-Mismatch-Warnung (gelbes Banner, nicht blockierend) */}
           {(ustWarning ?? localUstMismatch) && (
@@ -451,7 +487,7 @@ export function ExtractedFieldsPanel({
 
             <div className="grid grid-cols-2 gap-3">
               <span className="text-muted-foreground">Netto</span>
-              {invoiceId ? (
+              {canEditInvoice ? (
                 <EditableField
                   value={displayNet ?? formatCurrency(result?.net_amount ?? null)}
                   label="Nettobetrag"
@@ -473,7 +509,7 @@ export function ExtractedFieldsPanel({
 
             <div className="grid grid-cols-2 gap-3">
               <span className="text-muted-foreground">Steuer</span>
-              {invoiceId ? (
+              {canEditInvoice ? (
                 <EditableField
                   value={displayTax ?? formatCurrency(result?.tax_amount ?? null)}
                   label="Steuerbetrag"
@@ -495,7 +531,7 @@ export function ExtractedFieldsPanel({
 
             <div className="grid grid-cols-2 gap-3">
               <span className="text-muted-foreground">Gesamt</span>
-              {invoiceId ? (
+              {canEditInvoice ? (
                 <EditableField
                   value={displayTotal ?? formatCurrency(result?.total_amount ?? null)}
                   label="Gesamtbetrag"
@@ -510,14 +546,14 @@ export function ExtractedFieldsPanel({
                 />
               ) : (
                 <span className="text-right font-tnum">
-                  {renderValue(formatCurrency(result?.total_amount ?? null))}
+                  {renderValue(formatCurrency(displayTotal ?? null))}
                 </span>
               )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <span className="text-muted-foreground">Währung</span>
-              {invoiceId ? (
+              {canEditInvoice ? (
                 <EditableField
                   value={displayCurrency}
                   label="Währung"
@@ -527,7 +563,7 @@ export function ExtractedFieldsPanel({
                   isModified={isFieldModified(invoiceData?.currency, result?.currency)}
                 />
               ) : (
-                <span className="text-right">{renderValue(result?.currency)}</span>
+                <span className="text-right">{renderValue(displayCurrency)}</span>
               )}
             </div>
 
@@ -543,46 +579,50 @@ export function ExtractedFieldsPanel({
             )}
           </section>
 
-          <section className="space-y-2">
-            <h2 className="text-sm font-semibold tracking-tight">Positionen</h2>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Beschreibung</TableHead>
-                  <TableHead>Menge</TableHead>
-                  <TableHead>Einzelpreis</TableHead>
-                  <TableHead>Gesamt</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(result?.line_items?.length ?? 0) === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-muted-foreground">
-                      –
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  result?.line_items?.map((item, index) => (
-                    <TableRow key={`${item.description ?? "item"}-${index}`}>
-                      <TableCell>{item.description || "–"}</TableCell>
-                      <TableCell className="font-tnum">{item.quantity ?? "–"}</TableCell>
-                      <TableCell className="font-tnum">
-                        {formatCurrency(item.unit_price ?? null)}
-                      </TableCell>
-                      <TableCell className="font-tnum">
-                        {formatCurrency(item.total_price ?? null)}
-                      </TableCell>
+          {result && (
+            <>
+              <section className="space-y-2">
+                <h2 className="text-sm font-semibold tracking-tight">Positionen</h2>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Beschreibung</TableHead>
+                      <TableHead>Menge</TableHead>
+                      <TableHead>Einzelpreis</TableHead>
+                      <TableHead>Gesamt</TableHead>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </section>
+                  </TableHeader>
+                  <TableBody>
+                    {(result.line_items?.length ?? 0) === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-muted-foreground">
+                          –
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      result.line_items?.map((item, index) => (
+                        <TableRow key={`${item.description ?? "item"}-${index}`}>
+                          <TableCell>{item.description || "–"}</TableCell>
+                          <TableCell className="font-tnum">{item.quantity ?? "–"}</TableCell>
+                          <TableCell className="font-tnum">
+                            {formatCurrency(item.unit_price ?? null)}
+                          </TableCell>
+                          <TableCell className="font-tnum">
+                            {formatCurrency(item.total_price ?? null)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </section>
 
-          <section className="space-y-2">
-            <h2 className="text-sm font-semibold tracking-tight">Notizen</h2>
-            <p className="text-sm text-muted-foreground">{result?.confidence_notes || "–"}</p>
-          </section>
+              <section className="space-y-2">
+                <h2 className="text-sm font-semibold tracking-tight">Notizen</h2>
+                <p className="text-sm text-muted-foreground">{result.confidence_notes || "–"}</p>
+              </section>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

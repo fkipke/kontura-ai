@@ -369,7 +369,7 @@ async def list_invoice_files(
         429: {"description": "Rate-Limit ueberschritten"},
     },
 )
-@limiter.limit(settings.rate_limit_llm_per_tenant)
+@limiter.limit(settings.rate_limit_default_per_tenant)
 async def trigger_extraction(
     request: Request,  # noqa: ARG001 - von slowapi benoetigt
     response: Response,  # noqa: ARG001 - von slowapi benoetigt (Header-Injection)
@@ -388,6 +388,8 @@ async def trigger_extraction(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"InvoiceFile mit id={file_id} nicht gefunden",
         )
+
+    logger.info("re_extract_started", file_id=str(file_id), mime_type=invoice_file.mime_type)
 
     einvoice_result = None
     try:

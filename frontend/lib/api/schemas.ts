@@ -89,9 +89,9 @@ export const invoiceFileSchema = z.object({
 
 export const extractionLineItemSchema = z.object({
   description: z.string().nullish(),
-  quantity: z.number().nullish(),
-  unit_price: z.number().nullish(),
-  total_price: z.number().nullish(),
+  quantity: z.union([z.string(), z.number()]).nullish(),
+  unit_price: z.union([z.string(), z.number()]).nullish(),
+  total_price: z.union([z.string(), z.number()]).nullish(),
 });
 
 export const extractionResultSchema = z.object({
@@ -100,9 +100,9 @@ export const extractionResultSchema = z.object({
   due_date: z.string().nullish(),
   vendor_name: z.string().nullish(),
   vendor_address: z.string().nullish(),
-  net_amount: z.number().nullish(),
-  tax_amount: z.number().nullish(),
-  total_amount: z.number().nullish(),
+  net_amount: z.union([z.string(), z.number()]).nullish(),
+  tax_amount: z.union([z.string(), z.number()]).nullish(),
+  total_amount: z.union([z.string(), z.number()]).nullish(),
   currency: z.string().nullish(),
   line_items: z.array(extractionLineItemSchema).nullish(),
   confidence_notes: z.string().nullish(),

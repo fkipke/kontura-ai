@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 
 import { ExtractedFieldsPanel } from "@/components/invoices/extracted-fields-panel";
 import type { ExtractionStatus, InvoiceFile, InvoiceResponse } from "@/lib/api/schemas";
@@ -7,6 +8,7 @@ import type { MappingSuggestion } from "@/lib/api/vendorMappings";
 
 // Mock-Abhängigkeiten
 const mutateAsyncMock = vi.fn();
+const retryMutateAsyncMock = vi.fn();
 const useVendorMappingSuggestionMock = vi.fn(
   (vendorName: string | null): { data: MappingSuggestion | null } => {
     void vendorName;
@@ -28,7 +30,7 @@ vi.mock("@/lib/api/invoices", () => ({
 
 vi.mock("@/lib/api/invoiceFiles", () => ({
   useTriggerExtraction: () => ({
-    mutateAsync: vi.fn(),
+    mutateAsync: retryMutateAsyncMock,
     isPending: false,
   }),
 }));
@@ -56,6 +58,10 @@ const baseInvoiceFile: InvoiceFile = {
   sha256: "abc123",
   created_at: "2025-01-15T10:00:00Z",
   extraction_status: "completed",
+  vendor_name: "Listen GmbH",
+  invoice_date: "2025-01-10",
+  total_amount: "119.00",
+  currency: "EUR",
 };
 
 const baseExtraction: ExtractionStatus = {
@@ -104,16 +110,17 @@ const baseInvoiceData: InvoiceResponse = {
 describe("ExtractedFieldsPanel", () => {
   beforeEach(() => {
     mutateAsyncMock.mockReset();
+    retryMutateAsyncMock.mockReset();
     useVendorMappingSuggestionMock.mockReset();
     useVendorMappingSuggestionMock.mockReturnValue({ data: null });
   });
 
-  it("rendert Ladeanimation wenn loading=true", () => {
+  it("rendert kompaktes Skeleton wenn Rechnung noch nicht geladen ist", () => {
     render(
       <ExtractedFieldsPanel
         invoice={null}
         extraction={null}
-        loading={true}
+        isInvoiceLoading
         invoiceData={null}
         invoiceId={null}
       />,
@@ -127,7 +134,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={null}
         extraction={null}
-        loading={false}
         invoiceData={null}
         invoiceId={null}
       />,
@@ -140,7 +146,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={null}
         extraction={null}
-        loading={false}
         hasRetried={false}
         invoiceData={null}
         invoiceId={null}
@@ -151,12 +156,45 @@ describe("ExtractedFieldsPanel", () => {
     expect(document.querySelector(".animate-pulse")).toBeTruthy();
   });
 
+  it("renders denormalized fields immediately when invoice is loaded but extraction is still loading", () => {
+    render(
+      <ExtractedFieldsPanel
+        invoice={baseInvoiceFile}
+        extraction={null}
+        isExtractionLoading
+        invoiceData={null}
+        invoiceId={null}
+      />,
+    );
+
+    expect(screen.getByText("rechnung.pdf")).toBeInTheDocument();
+    expect(screen.getByText("Listen GmbH")).toBeInTheDocument();
+    expect(
+      screen.getAllByText((_, element) => element?.textContent === "119,00 €").length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Rechnung konnte nicht geladen werden/i)).not.toBeInTheDocument();
+  });
+
+  it("does not render full skeleton wall when invoice list has the file", () => {
+    render(
+      <ExtractedFieldsPanel
+        invoice={baseInvoiceFile}
+        extraction={null}
+        isExtractionLoading
+        invoiceData={null}
+        invoiceId={null}
+      />,
+    );
+
+    expect(screen.getByText("rechnung.pdf")).toBeInTheDocument();
+    expect(document.querySelectorAll(".animate-pulse")).toHaveLength(2);
+  });
+
   it("rendert Felder aus Extraction-Daten", () => {
     render(
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={baseInvoiceData}
         invoiceId="invoice-456"
       />,
@@ -170,7 +208,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={baseInvoiceData}
         invoiceId="invoice-456"
       />,
@@ -197,7 +234,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={baseInvoiceData}
         invoiceId="invoice-456"
       />,
@@ -226,7 +262,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={baseInvoiceData}
         invoiceId="invoice-456"
       />,
@@ -253,7 +288,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={baseInvoiceData}
         invoiceId="invoice-456"
       />,
@@ -274,7 +308,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={baseInvoiceData}
         invoiceId="invoice-456"
       />,
@@ -302,7 +335,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={baseInvoiceData}
         invoiceId="invoice-456"
       />,
@@ -330,7 +362,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={invoiceWithWarning}
         invoiceId="invoice-456"
       />,
@@ -346,7 +377,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={baseInvoiceData}
         invoiceId="invoice-456"
       />,
@@ -360,7 +390,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={{ ...baseInvoiceData, is_reviewed: false }}
         invoiceId="invoice-456"
       />,
@@ -375,7 +404,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={{ ...baseInvoiceData, is_reviewed: true }}
         invoiceId="invoice-456"
       />,
@@ -394,7 +422,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={baseInvoiceData}
         invoiceId="invoice-456"
       />,
@@ -443,7 +470,6 @@ describe("ExtractedFieldsPanel", () => {
       <ExtractedFieldsPanel
         invoice={baseInvoiceFile}
         extraction={baseExtraction}
-        loading={false}
         invoiceData={invoiceWithWarning}
         invoiceId="invoice-456"
       />,
@@ -460,5 +486,70 @@ describe("ExtractedFieldsPanel", () => {
         expect.objectContaining({ is_reviewed: true }),
       );
     });
+  });
+
+  it("shows specific error message from backend when re-extract returns status=failed", async () => {
+    retryMutateAsyncMock.mockResolvedValue({
+      ...baseExtraction,
+      status: "failed",
+      error: "XML konnte nicht gelesen werden",
+    });
+
+    render(
+      <ExtractedFieldsPanel
+        invoice={{ ...baseInvoiceFile, extraction_status: "failed" }}
+        extraction={{ ...baseExtraction, status: "failed", error: "Altfehler" }}
+        invoiceData={null}
+        invoiceId={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /erneut extrahieren/i }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "Re-Extraktion: XML konnte nicht gelesen werden",
+      );
+    });
+  });
+
+  it("logs real error to console on catch-all branch", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    retryMutateAsyncMock.mockRejectedValue(new Error("kaputt"));
+
+    render(
+      <ExtractedFieldsPanel
+        invoice={{ ...baseInvoiceFile, extraction_status: "failed" }}
+        extraction={{ ...baseExtraction, status: "failed", error: "Altfehler" }}
+        invoiceData={null}
+        invoiceId={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /erneut extrahieren/i }));
+
+    await waitFor(() => {
+      expect(consoleErrorSpy).toHaveBeenCalledWith("Re-extract failed:", expect.any(Error));
+      expect(toast.error).toHaveBeenCalledWith("Fehler: kaputt");
+    });
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("does not crash useVendorMappingSuggestion when displayVendor is null", () => {
+    render(
+      <ExtractedFieldsPanel
+        invoice={{ ...baseInvoiceFile, vendor_name: null }}
+        extraction={{
+          ...baseExtraction,
+          result: { ...baseExtraction.result, vendor_name: null },
+        }}
+        invoiceData={{ ...baseInvoiceData, vendor_name: null }}
+        invoiceId="invoice-456"
+      />,
+    );
+
+    expect(useVendorMappingSuggestionMock).toHaveBeenCalledWith(null);
+    expect(screen.queryByText("Kontierung")).not.toBeInTheDocument();
   });
 });

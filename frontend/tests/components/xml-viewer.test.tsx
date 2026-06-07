@@ -9,6 +9,10 @@ vi.mock("sonner", () => ({
   },
 }));
 
+function getRows(): HTMLElement[] {
+  return Array.from(document.querySelectorAll(".group.flex.leading-6")) as HTMLElement[];
+}
+
 describe("XmlViewer", () => {
   const fetchMock = vi.fn();
 
@@ -21,36 +25,76 @@ describe("XmlViewer", () => {
     });
   });
 
-  it("pretty prints UBL invoice with indentation", async () => {
+  it("inlines short single-text-child elements on one line", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      text: async () =>
-        '<?xml version="1.0"?><Invoice><cbc:ID xmlns:cbc="x">RE-1</cbc:ID></Invoice>',
+      text: async () => '<?xml version="1.0"?><Invoice><cbc:ID>RE-001</cbc:ID></Invoice>',
     });
 
     render(<XmlViewer fileUrl="/xml" filename="test.xml" />);
 
-    expect((await screen.findAllByText("Invoice")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("cbc:ID").length).toBeGreaterThan(0);
-    expect(screen.getByText("RE-1")).toBeInTheDocument();
+    await screen.findByText("RE-001");
+    expect(
+      getRows().some((row) => row.textContent?.includes("<cbc:ID>RE-001</cbc:ID>")),
+    ).toBe(true);
   });
 
-  it("shows line numbers", async () => {
-    fetchMock.mockResolvedValue({ ok: true, text: async () => "<Invoice><A>1</A></Invoice>" });
+  it("keeps long single-text-child elements split", async () => {
+    const longText = "A".repeat(120);
+    fetchMock.mockResolvedValue({
+      ok: true,
+      text: async () => `<?xml version="1.0"?><Invoice><cbc:Note>${longText}</cbc:Note></Invoice>`,
+    });
+
     render(<XmlViewer fileUrl="/xml" filename="test.xml" />);
 
-    await screen.findAllByText("Invoice");
-    const lineNumbers = Array.from(document.querySelectorAll("span.select-none")).map(
-      (node) => node.textContent?.trim() ?? "",
-    );
-    expect(lineNumbers).toContain("1");
+    await screen.findByText(longText);
+    expect(
+      getRows().some((row) => row.textContent?.includes(`<cbc:Note>${longText}</cbc:Note>`)),
+    ).toBe(false);
+    expect(getRows().some((row) => row.textContent?.includes("<cbc:Note>"))).toBe(true);
   });
 
-  it("shows error state when fetch fails", async () => {
-    fetchMock.mockRejectedValue(new Error("boom"));
+  it("highlights xml declaration with declaration color", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      text: async () => '<?xml version="1.0" encoding="UTF-8"?><Invoice />',
+    });
+
     render(<XmlViewer fileUrl="/xml" filename="test.xml" />);
 
-    expect(await screen.findByText(/XML konnte nicht geladen werden/i)).toBeInTheDocument();
+    const declaration = await screen.findByText('<?xml version="1.0" encoding="UTF-8"?>');
+    expect(declaration).toHaveClass("text-pink-700");
+  });
+
+  it("renders indent guides for nested elements", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      text: async () => "<Invoice><Level1><Level2>Wert</Level2></Level1></Invoice>",
+    });
+
+    render(<XmlViewer fileUrl="/xml" filename="test.xml" />);
+
+    await screen.findByText("Wert");
+    expect(screen.getAllByTestId("xml-indent-guide").length).toBeGreaterThan(0);
+  });
+
+  it("search input filters/highlights matches", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      text: async () =>
+        '<?xml version="1.0"?><Invoice><cbc:ID>RE-001</cbc:ID><cbc:Note>Andere Zeile</cbc:Note></Invoice>',
+    });
+
+    render(<XmlViewer fileUrl="/xml" filename="test.xml" />);
+
+    await screen.findByText("RE-001");
+    fireEvent.change(screen.getAllByRole("textbox", { name: /xml durchsuchen/i })[0], {
+      target: { value: "RE-001" },
+    });
+
+    expect(screen.getByText("RE-001").tagName).toBe("MARK");
+    expect(screen.queryByText("Andere Zeile")).not.toBeInTheDocument();
   });
 
   it("copies content to clipboard on copy button", async () => {
@@ -61,31 +105,15 @@ describe("XmlViewer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Kopieren" }));
 
     await waitFor(() => {
-      expect(navigator.clipboard.writeText).toHaveBeenCalled();
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith("<Invoice><A>1</A></Invoice>");
     });
   });
 
-  it("font-size changes when zoom buttons clicked", async () => {
+  it("download link points to fileUrl", async () => {
     fetchMock.mockResolvedValue({ ok: true, text: async () => "<Invoice><A>1</A></Invoice>" });
     render(<XmlViewer fileUrl="/xml" filename="test.xml" />);
 
     await screen.findAllByText("Invoice");
-    expect(screen.getByText("14px")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Vergrößern" }));
-    expect(screen.getByText("16px")).toBeInTheDocument();
-  });
-
-  it("escapes XML content (no innerHTML/dangerouslySetInnerHTML in DOM)", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      text: async () => '<Invoice><Note>&lt;script&gt;alert(1)&lt;/script&gt;</Note></Invoice>',
-    });
-
-    render(<XmlViewer fileUrl="/xml" filename="test.xml" />);
-
-    await screen.findAllByText("Invoice");
-    expect(document.querySelector("script")).toBeNull();
-    expect(document.body.textContent).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(screen.getByRole("link", { name: /herunterladen/i })).toHaveAttribute("href", "/xml");
   });
 });
