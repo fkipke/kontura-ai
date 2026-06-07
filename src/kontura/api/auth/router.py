@@ -25,11 +25,12 @@ from kontura.api.auth.schemas import (
     VerifyEmailResponse,
 )
 from kontura.api.auth.service import AuthService
-from kontura.api.dependencies import EmailSenderDep, TokenDep
+from kontura.api.dependencies import EmailSenderDep, SettingsDep, TokenDep
 from kontura.api.rate_limit import ip_key, limiter
 from kontura.core.config import settings
 from kontura.core.exceptions import ConflictError, DomainValidationError
 from kontura.core.jwt import encode_token
+from kontura.core.security import hash_password
 from kontura.core.security.disposable_emails import is_disposable_email
 from kontura.infra.db import get_session
 from kontura.infra.email import build_verification_email
@@ -276,3 +277,49 @@ async def me(token: TokenDep) -> MeResponse:
 )
 async def logout(token: TokenDep) -> None:  # noqa: ARG001
     return None
+
+
+@router.post(
+    "/demo-login",
+    response_model=TokenResponse,
+    summary="Demo-Login (nur aktiv wenn KONTURA_DEMO_MODE=true)",
+    responses={
+        200: {"description": "JWT fuer den Demo-User"},
+        403: {"description": "Demo-Modus ist deaktiviert"},
+    },
+)
+async def demo_login(
+    app_settings: SettingsDep,
+    session: SessionDep,
+) -> TokenResponse:
+    """Gibt einen JWT fuer den Demo-User zurueck.
+
+    Nur aktiv wenn KONTURA_DEMO_MODE=true — gibt sonst 403 zurueck.
+    Kein Passwort-Check: die ENV-Variable ist das Gate.
+    """
+    if not app_settings.demo_mode:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo mode ist deaktiviert.",
+        )
+
+    repo = UserRepository(session)
+    user = await repo.get_by_tenant_and_email(
+        app_settings.demo_tenant_id, app_settings.demo_user_email
+    )
+    if user is None:
+        # Demo-User anlegen
+        user = await repo.create(
+            tenant_id=app_settings.demo_tenant_id,
+            email=app_settings.demo_user_email,
+            password_hash=hash_password(app_settings.demo_user_password),
+            full_name="Demo User",
+            email_verified_at=datetime.now(tz=UTC),
+        )
+        await session.commit()
+
+    return _build_token_response(
+        user_id=str(user.id),
+        tenant_id=user.tenant_id,
+        email=user.email,
+    )
