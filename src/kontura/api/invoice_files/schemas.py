@@ -110,7 +110,7 @@ class ExtractionStatusResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     file_id: uuid.UUID
-    status: Literal["pending", "processing", "completed", "failed"]
+    status: Literal["pending", "processing", "completed", "failed", "not_an_invoice"]
     attempts: int
     extracted_at: datetime | None
     error: str | None

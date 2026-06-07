@@ -24,6 +24,7 @@ class ExtractionStatus(StrEnum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    NOT_AN_INVOICE = "not_an_invoice"
 
 
 class ExtractionMethod(StrEnum):

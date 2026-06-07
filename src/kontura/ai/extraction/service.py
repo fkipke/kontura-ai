@@ -33,6 +33,19 @@ from kontura.infra.storage import FileStorage
 
 logger = structlog.get_logger(__name__)
 
+
+def _format_validation_error_de(exc: ValidationError) -> str:
+    """Gibt eine kurze deutsche Zusammenfassung der fehlgeschlagenen Felder zurueck.
+
+    NEVER exposes the raw Pydantic dump — only field names.
+    """
+    fields = {".".join(str(loc) for loc in err["loc"]) for err in exc.errors()}
+    if not fields:
+        return "Unbekannte Validierungsfehler."
+    field_list = ", ".join(sorted(fields))
+    return f"Folgende Felder konnten nicht erkannt werden: {field_list}"
+
+
 # System-Prompt fuer deutsche Rechnungsformate.
 # Praezise Anweisung verbessert die Extraction-Qualitaet deutlich.
 _SYSTEM_PROMPT = """Du bist ein Spezialist fuer die Verarbeitung deutscher Eingangsrechnungen.
@@ -152,8 +165,35 @@ class ExtractionService:
                 completion_tokens=completion_tokens,
             )
 
-            # Schritt 9: Pydantic-Validierung (Hard-Fail bei ungueltigem Schema)
-            extracted_data = ExtractedInvoiceData.model_validate(result_dict)
+            # Schritt 9: Pydantic-Validierung mit NOT_AN_INVOICE-Heuristik
+            try:
+                extracted_data = ExtractedInvoiceData.model_validate(result_dict)
+            except ValidationError as val_exc:
+                payload = result_dict if isinstance(result_dict, dict) else {}
+                critical_all_missing = (
+                    payload.get("invoice_number") in (None, "", "null")
+                    and payload.get("total_amount") in (None, "", "null")
+                    and payload.get("vendor_name") in (None, "", "null")
+                )
+                if critical_all_missing:
+                    invoice_file.extraction_status = ExtractionStatus.NOT_AN_INVOICE
+                    invoice_file.extraction_error = (
+                        "Das Dokument scheint keine Rechnung zu sein. "
+                        "Bitte prüfe den Upload — es konnten keine Rechnungsfelder "
+                        "erkannt werden (z.B. Rechnungsnummer, Betrag, Lieferant)."
+                    )
+                    log.info("extraction.not_an_invoice", invoice_file_id=str(invoice_file.id))
+                else:
+                    invoice_file.extraction_status = ExtractionStatus.FAILED
+                    invoice_file.extraction_error = (
+                        f"Extraktion fehlgeschlagen: {_format_validation_error_de(val_exc)}"
+                    )
+                    log.warning(
+                        "extraction.failed_validation",
+                        invoice_file_id=str(invoice_file.id),
+                    )
+                await self._session.commit()
+                return invoice_file
 
             # Schritt 10: Invoice finden oder neu anlegen
             invoice = await self._find_or_create_invoice(tenant, extracted_data)
@@ -173,7 +213,7 @@ class ExtractionService:
                 invoice_number=extracted_data.invoice_number,
             )
 
-        except (NotFoundError, ValidationError, ValueError, RuntimeError, Exception) as exc:
+        except (NotFoundError, ValueError, RuntimeError, Exception) as exc:
             # Schritt 12: Fehler-Handling - crasht NICHT nach aussen
             error_msg = repr(exc)[:1000]
             log.warning("extraction_failed", error=error_msg)
