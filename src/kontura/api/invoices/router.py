@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -25,12 +25,22 @@ from kontura.api.vendor_mappings.service import VendorMappingService
 from kontura.core.config import settings
 from kontura.core.exceptions import ConflictError, DomainValidationError, NotFoundError
 from kontura.infra.db import get_session
+from kontura.infra.models.invoice import InvoiceStatus
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 _SUPPORTED_CURRENCIES = {"EUR", "USD", "CHF"}
+
+_SORT_FIELDS = {
+    "invoice_date",
+    "created_at",
+    "total_amount",
+    "vendor_name",
+    "invoice_number",
+    "status",
+}
 
 
 @router.post(
@@ -66,20 +76,68 @@ async def create_invoice(
 
 
 @router.get(
+    "/vendors",
+    response_model=list[str],
+    summary="Gibt sortierte, eindeutige Lieferantennamen des Tenants zurueck",
+)
+@limiter.limit(settings.rate_limit_default_per_tenant)
+async def list_vendors(
+    request: Request,  # noqa: ARG001 - von slowapi gebraucht
+    tenant: TenantDep,
+    session: SessionDep,
+) -> list[str]:
+    repo = InvoiceRepository(session)
+    return await repo.list_distinct_vendors(tenant)
+
+
+@router.get(
     "",
     response_model=list[InvoiceRead],
-    summary="Listet Eingangsrechnungen (sortiert nach Anlage-Datum)",
+    summary="Listet Eingangsrechnungen mit optionalen Filtern (X-Total-Count Header)",
 )
 @limiter.limit(settings.rate_limit_default_per_tenant)
 async def list_invoices(
     request: Request,  # noqa: ARG001 - von slowapi gebraucht
+    response: Response,
     tenant: TenantDep,
     session: SessionDep,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    search: Annotated[str | None, Query(max_length=255)] = None,
+    status_filter: Annotated[list[InvoiceStatus] | None, Query(alias="status")] = None,
+    reviewed_filter: Annotated[bool | None, Query(alias="reviewed")] = None,
+    date_from: Annotated[date | None, Query()] = None,
+    date_to: Annotated[date | None, Query()] = None,
+    amount_min: Annotated[Decimal | None, Query(ge=0)] = None,
+    amount_max: Annotated[Decimal | None, Query(ge=0)] = None,
+    vendor_filter: Annotated[list[str] | None, Query(alias="vendor")] = None,
+    method_filter: Annotated[list[str] | None, Query(alias="method")] = None,
+    sort_by: Annotated[
+        Literal[
+            "invoice_date", "created_at", "total_amount", "vendor_name", "invoice_number", "status"
+        ],
+        Query(),
+    ] = "invoice_date",
+    sort_order: Annotated[Literal["asc", "desc"], Query()] = "desc",
 ) -> list[InvoiceRead]:
     repo = InvoiceRepository(session)
-    invoices = await repo.list_all(tenant, limit=limit, offset=offset)
+    invoices, total = await repo.list_filtered(
+        tenant,
+        search=search,
+        status_filter=status_filter,
+        reviewed_filter=reviewed_filter,
+        date_from=date_from,
+        date_to=date_to,
+        amount_min=amount_min,
+        amount_max=amount_max,
+        vendor_filter=vendor_filter,
+        method_filter=method_filter,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        limit=limit,
+        offset=offset,
+    )
+    response.headers["X-Total-Count"] = str(total)
     return [InvoiceRead.model_validate(inv) for inv in invoices]
 
 
@@ -98,10 +156,11 @@ async def get_invoice(
     session: SessionDep,
 ) -> InvoiceResponse:
     repo = InvoiceRepository(session)
-    invoice = await repo.get_by_id(tenant, invoice_id)
-    if invoice is None:
+    row = await repo.get_by_id_with_user_email(tenant, invoice_id)
+    if row is None:
         raise NotFoundError(f"Invoice mit id={invoice_id} nicht gefunden")
-    return InvoiceResponse.from_invoice(invoice)
+    invoice, reviewer_email = row
+    return InvoiceResponse.from_invoice(invoice, reviewed_by_user_email=reviewer_email)
 
 
 def _compute_warnings(invoice: object) -> list[ValidationWarning]:
@@ -175,14 +234,17 @@ async def update_invoice(
     repo = InvoiceRepository(session)
     user_id = uuid.UUID(token.sub)
 
-    # 1. Laden (tenant-isoliert)
-    invoice = await repo.get_by_id(tenant, invoice_id)
-    if invoice is None:
+    # 1. Laden (tenant-isoliert) mit User-Email fuer Optimistic-Lock-Response
+    row = await repo.get_by_id_with_user_email(tenant, invoice_id)
+    if row is None:
         raise NotFoundError(f"Invoice {invoice_id} nicht gefunden")
+    invoice, reviewer_email = row
 
     # 2. Optimistic Lock
     if payload.expected_version != invoice.version:
-        current_response = InvoiceResponse.from_invoice(invoice, _compute_warnings(invoice))
+        current_response = InvoiceResponse.from_invoice(
+            invoice, _compute_warnings(invoice), reviewed_by_user_email=reviewer_email
+        )
         return JSONResponse(  # type: ignore[return-value]
             status_code=409,
             content={
@@ -250,4 +312,10 @@ async def update_invoice(
     # 7. Soft-Validation aus gespeichertem Stand
     warnings = _compute_warnings(invoice)
 
-    return InvoiceResponse.from_invoice(invoice, warnings if warnings else None)
+    # 8. Aktualisierte reviewer_email laden (is_reviewed koennte sich geaendert haben)
+    updated_row = await repo.get_by_id_with_user_email(tenant, invoice_id)
+    updated_reviewer_email = updated_row[1] if updated_row is not None else None
+
+    return InvoiceResponse.from_invoice(
+        invoice, warnings if warnings else None, reviewed_by_user_email=updated_reviewer_email
+    )

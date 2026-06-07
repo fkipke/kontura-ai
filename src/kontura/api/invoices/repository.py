@@ -9,15 +9,17 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kontura.api.invoices.schemas import InvoiceCreate, InvoiceLineItem
 from kontura.core.tenant import TenantContext
-from kontura.infra.models.invoice import Invoice
+from kontura.infra.models.invoice import Invoice, InvoiceStatus
 from kontura.infra.models.invoice_edit import InvoiceEdit
+from kontura.infra.models.invoice_file import ExtractionMethod
+from kontura.infra.models.user import User
 
 
 def _serialize_line_items(items: Any) -> list[dict[str, Any]] | None:
@@ -102,6 +104,119 @@ class InvoiceRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_by_id_with_user_email(
+        self, tenant: TenantContext, invoice_id: uuid.UUID
+    ) -> tuple[Invoice, str | None] | None:
+        """Liefert (Invoice, user_email) mit LEFT JOIN auf users.
+
+        reviewed_by_user_email ist None wenn kein reviewer gesetzt oder User geloescht.
+        """
+        stmt = (
+            select(Invoice, User.email)
+            .outerjoin(User, User.id == Invoice.reviewed_by_user_id)
+            .where(
+                Invoice.id == invoice_id,
+                Invoice.tenant_id == tenant.tenant_id,
+            )
+        )
+        result = await self._session.execute(stmt)
+        row = result.one_or_none()
+        if row is None:
+            return None
+        invoice, email = row
+        return invoice, email
+
+    async def list_filtered(
+        self,
+        tenant: TenantContext,
+        *,
+        search: str | None = None,
+        status_filter: list[InvoiceStatus] | None = None,
+        reviewed_filter: bool | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        amount_min: Decimal | None = None,
+        amount_max: Decimal | None = None,
+        vendor_filter: list[str] | None = None,
+        method_filter: list[str] | None = None,
+        sort_by: Literal[
+            "invoice_date", "created_at", "total_amount", "vendor_name", "invoice_number", "status"
+        ] = "invoice_date",
+        sort_order: Literal["asc", "desc"] = "desc",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[Invoice], int]:
+        """Gibt (page_items, total_count) zurueck. total_count fuer X-Total-Count Header."""
+        # Tenant-Filter IMMER zuerst
+        base_where = [Invoice.tenant_id == tenant.tenant_id]
+
+        if search:
+            pattern = f"%{search}%"
+            base_where.append(
+                Invoice.invoice_number.ilike(pattern) | Invoice.vendor_name.ilike(pattern)
+            )
+
+        if status_filter:
+            base_where.append(Invoice.status.in_(status_filter))
+
+        if reviewed_filter is not None:
+            base_where.append(Invoice.is_reviewed == reviewed_filter)
+
+        if date_from is not None:
+            base_where.append(Invoice.invoice_date >= date_from)
+
+        if date_to is not None:
+            base_where.append(Invoice.invoice_date <= date_to)
+
+        if amount_min is not None:
+            base_where.append(Invoice.total_amount >= amount_min)
+
+        if amount_max is not None:
+            base_where.append(Invoice.total_amount <= amount_max)
+
+        if vendor_filter:
+            base_where.append(Invoice.vendor_name.in_(vendor_filter))
+
+        if method_filter:
+            from kontura.infra.models.invoice_file import InvoiceFile  # noqa: PLC0415
+
+            # Filter invoices that have at least one file with matching extraction_method
+            method_enum_vals = [ExtractionMethod(m) for m in method_filter]
+            sub = (
+                select(InvoiceFile.invoice_id)
+                .where(InvoiceFile.extraction_method.in_(method_enum_vals))
+                .where(InvoiceFile.invoice_id.is_not(None))
+            )
+            base_where.append(Invoice.id.in_(sub))
+
+        # Total count (separate query, no LIMIT/OFFSET)
+        count_stmt = select(func.count()).select_from(Invoice).where(*base_where)
+        total: int = (await self._session.execute(count_stmt)).scalar_one()
+
+        # Sort column (validated against Literal allowlist via type system)
+        sort_col = getattr(Invoice, sort_by)
+        order_expr = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+
+        # Data query
+        data_stmt = (
+            select(Invoice).where(*base_where).order_by(order_expr).limit(limit).offset(offset)
+        )
+        rows = (await self._session.execute(data_stmt)).scalars().all()
+        return list(rows), total
+
+    async def list_distinct_vendors(self, tenant: TenantContext) -> list[str]:
+        """Gibt sortierte, eindeutige Lieferantennamen des Tenants zurueck."""
+        stmt = (
+            select(Invoice.vendor_name)
+            .where(Invoice.tenant_id == tenant.tenant_id)
+            .where(Invoice.vendor_name.is_not(None))
+            .where(Invoice.vendor_name != "")
+            .distinct()
+            .order_by(Invoice.vendor_name.asc())
+        )
+        result = await self._session.execute(stmt)
+        return [row[0] for row in result.all()]
 
     async def list_all(
         self, tenant: TenantContext, limit: int = 50, offset: int = 0

@@ -107,6 +107,7 @@ class InvoiceResponse(BaseModel):
     is_reviewed: bool
     reviewed_at: datetime | None
     reviewed_by_user_id: uuid.UUID | None
+    reviewed_by_user_email: str | None = None
     vendor_name: str
     invoice_number: str
     invoice_date: date
@@ -122,10 +123,14 @@ class InvoiceResponse(BaseModel):
 
     @classmethod
     def from_invoice(
-        cls, invoice: object, warnings: list[ValidationWarning] | None = None
+        cls,
+        invoice: object,
+        warnings: list[ValidationWarning] | None = None,
+        reviewed_by_user_email: str | None = None,
     ) -> "InvoiceResponse":
-        """Erzeugt InvoiceResponse aus ORM-Objekt + optionalen Warnings."""
+        """Erzeugt InvoiceResponse aus ORM-Objekt + optionalen Warnings + User-Email."""
         obj = cls.model_validate(invoice)
         if warnings:
             obj.validation_warnings = warnings
+        obj.reviewed_by_user_email = reviewed_by_user_email
         return obj
