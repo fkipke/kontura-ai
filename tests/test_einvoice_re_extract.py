@@ -115,6 +115,14 @@ async def test_re_extract_with_existing_invoice_id_updates_not_inserts(
     assert upload.status_code == 201
     file_id = upload.json()["id"]
 
+    invoice_file_pre = await _get_invoice_file(session, file_id)
+    if invoice_file_pre.invoice_id is not None:
+        pre_invoice = await session.get(Invoice, invoice_file_pre.invoice_id)
+        if pre_invoice is not None:
+            await session.delete(pre_invoice)
+        invoice_file_pre.invoice_id = None
+        await session.commit()
+
     existing_invoice = Invoice(
         tenant_id="acme-corp",
         invoice_number="OLD-RE-001",

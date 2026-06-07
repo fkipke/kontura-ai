@@ -143,8 +143,7 @@ class EinvoiceExtractionService:
                     net_amount=extracted_data.net_amount,
                     tax_amount=extracted_data.tax_amount,
                     line_items=[
-                        item.model_dump(mode="json")
-                        for item in (extracted_data.line_items or [])
+                        item.model_dump(mode="json") for item in (extracted_data.line_items or [])
                     ],
                     status=InvoiceStatus.PROCESSING,
                 )
