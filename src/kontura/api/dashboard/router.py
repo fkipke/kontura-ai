@@ -289,42 +289,49 @@ async def _build_alerts(tenant: TenantContext, session: AsyncSession) -> list[Da
             )
 
     # -- Potential duplicate: same (invoice_number, vendor_name, total_amount)
-    # but different invoice_date --
-    dup_stmt = (
-        select(Invoice)
+    # but different invoice_date — detected purely in SQL via GROUP BY / HAVING --
+    dup_subq = (
+        select(
+            Invoice.invoice_number,
+            Invoice.vendor_name,
+            Invoice.total_amount,
+            func.count(func.distinct(Invoice.invoice_date)).label("date_count"),
+            func.min(Invoice.id).label("sample_id"),
+        )
         .where(
             Invoice.tenant_id == tenant.tenant_id,
             Invoice.invoice_number.is_not(None),
             Invoice.vendor_name.is_not(None),
         )
-        .order_by(Invoice.invoice_date.desc())
+        .group_by(Invoice.invoice_number, Invoice.vendor_name, Invoice.total_amount)
+        .having(func.count(func.distinct(Invoice.invoice_date)) > 1)
+        .order_by(func.max(Invoice.invoice_date).desc())
+        .limit(10)
+        .subquery()
     )
-    all_invoices = (await session.execute(dup_stmt)).scalars().all()
+    dup_rows_stmt = select(
+        Invoice.id,
+        Invoice.invoice_number,
+        Invoice.vendor_name,
+        Invoice.total_amount,
+    ).join(dup_subq, Invoice.id == dup_subq.c.sample_id)
 
-    seen: dict[tuple[str, str, str], date] = {}
-    for inv in all_invoices:
-        key = (
-            str(inv.invoice_number),
-            str(inv.vendor_name),
-            str(inv.total_amount),
-        )
-        if key in seen and seen[key] != inv.invoice_date:
-            alerts.append(
-                DashboardAlert(
-                    type="potential_duplicate",
-                    invoice_id=inv.id,
-                    invoice_number=inv.invoice_number,
-                    vendor_name=inv.vendor_name,
-                    total_amount=inv.total_amount,
-                    message=(
-                        f"Mögliche Doppelbuchung: Rechnung '{inv.invoice_number}' "
-                        f"von '{inv.vendor_name}' existiert mit unterschiedlichem Datum."
-                    ),
-                    severity="danger",
-                )
+    dup_rows = (await session.execute(dup_rows_stmt)).all()
+    for row in dup_rows:
+        alerts.append(
+            DashboardAlert(
+                type="potential_duplicate",
+                invoice_id=row.id,
+                invoice_number=row.invoice_number,
+                vendor_name=row.vendor_name,
+                total_amount=row.total_amount,
+                message=(
+                    f"Mögliche Doppelbuchung: Rechnung '{row.invoice_number}' "
+                    f"von '{row.vendor_name}' existiert mit unterschiedlichem Datum."
+                ),
+                severity="danger",
             )
-        else:
-            seen[key] = inv.invoice_date
+        )
 
     # Cap at 10, most recent invoice first
     alerts.sort(key=lambda a: str(a.invoice_id))

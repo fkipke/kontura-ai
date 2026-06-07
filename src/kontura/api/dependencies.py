@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from kontura.ai.base import AIProvider
 from kontura.ai.factory import get_ai_provider
-from kontura.core.config import Settings, settings
+from kontura.core.config import Settings, get_settings, settings
 from kontura.core.jwt import TokenError, TokenPayload, decode_token
 from kontura.core.tenant import TenantContext, current_tenant_var
 from kontura.infra.db import engine as _module_engine
@@ -128,11 +128,5 @@ FileStorageDep = Annotated[LocalFilesystemStorage, Depends(get_file_storage)]
 AIProviderDep = Annotated[AIProvider, Depends(get_ai_provider)]
 EngineDep = Annotated[AsyncEngine, Depends(get_db_engine)]
 EmailSenderDep = Annotated[EmailSender, Depends(get_email_sender)]
-
-
-def get_settings() -> Settings:
-    """Liefert die globale Settings-Instanz. In Tests per dependency_overrides austauschbar."""
-    return settings
-
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]

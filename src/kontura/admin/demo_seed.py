@@ -124,7 +124,7 @@ _VAT_RATES = [(Decimal("0.19"), 80), (Decimal("0.07"), 15), (Decimal("0"), 5)]
 
 def _weighted_choice(rng: random.Random, choices: list[tuple[Any, int]]) -> Any:
     items, weights = zip(*choices, strict=False)
-    return rng.choices(list(items), weights=list(weights), k=1)[0]
+    return rng.choices(items, weights=weights, k=1)[0]
 
 
 def _random_date_in_last_n_months(rng: random.Random, months: int) -> date:
@@ -179,7 +179,7 @@ def _make_sha256(content: bytes) -> str:
 def _make_minimal_pdf_bytes(
     vendor_name: str, invoice_number: str, inv_date: date, total: Decimal
 ) -> bytes:
-    """Generiert ein minimales PDF mit PyMuPDF (fitz) - kein neues Dependency."""
+    """Generiert ein minimales PDF mit PyMuPDF (fitz), das bereits als Dependency vorhanden ist."""
     try:
         import fitz  # noqa: PLC0415
 
