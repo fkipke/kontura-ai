@@ -28,7 +28,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from kontura.ai.base import AIProvider
 from kontura.ai.factory import get_ai_provider
-from kontura.core.config import Settings, get_settings, settings
+
+# Explicit `X as X` re-export pattern is required by mypy --strict (PEP 484).
+# Tests and other modules import `get_settings` from this module as a stable
+# DI seam; without the alias mypy treats the import as module-private and
+# raises `attr-defined`. Settings and `settings` are also re-exported so the
+# DI surface for FastAPI dependencies stays in one place.
+from kontura.core.config import Settings as Settings
+from kontura.core.config import get_settings as get_settings
+from kontura.core.config import settings as settings
 from kontura.core.jwt import TokenError, TokenPayload, decode_token
 from kontura.core.tenant import TenantContext, current_tenant_var
 from kontura.infra.db import engine as _module_engine
