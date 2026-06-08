@@ -3,6 +3,13 @@ import { AlertTriangle, FileCheck2, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 export type ExtractionMethod = "xrechnung_ubl" | "xrechnung_cii" | "zugferd_v2" | "ai_vision" | null;
+export type ExtendedExtractionMethod =
+  | "xrechnung_ubl"
+  | "xrechnung_cii"
+  | "zugferd_v2"
+  | "ai_vision"
+  | "not_an_invoice"
+  | null;
 
 export type ZugferdProfile =
   | "minimum"
@@ -14,12 +21,12 @@ export type ZugferdProfile =
   | null;
 
 interface Props {
-  method: ExtractionMethod;
+  method: ExtendedExtractionMethod;
   zugferdProfile?: ZugferdProfile;
 }
 
 const METHOD_CONFIG: Record<
-  NonNullable<ExtractionMethod>,
+  Exclude<NonNullable<ExtendedExtractionMethod>, "not_an_invoice">,
   {
     label: string;
     variant: "secondary" | "success";
@@ -64,6 +71,18 @@ export function ExtractionMethodBadge({
 }: Props): React.JSX.Element | null {
   if (method === null) {
     return null;
+  }
+
+  if (method === "not_an_invoice") {
+    return (
+      <Badge
+        variant="destructive"
+        className="inline-flex items-center gap-1.5 rounded-md border border-rose-300 bg-rose-100 px-2.5 py-1 text-xs font-medium text-rose-900 hover:bg-rose-100"
+      >
+        <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+        <span>Keine Rechnung</span>
+      </Badge>
+    );
   }
 
   const config = METHOD_CONFIG[method];

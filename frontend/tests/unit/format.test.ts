@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatCurrency, formatGermanDate } from "@/lib/format";
+import { formatCurrency, formatGermanDate, formatRelativeTime } from "@/lib/format";
 
 describe("Formatter", () => {
   it("formatiert Eurobeträge im deutschen Format", () => {
@@ -19,5 +19,11 @@ describe("Formatter", () => {
   it("behandelt ungültige Datumswerte", () => {
     expect(formatGermanDate("invalid")).toBe("–");
     expect(formatGermanDate(null)).toBe("–");
+  });
+
+  it("formatiert relative Zeit", () => {
+    const now = Date.now();
+    expect(formatRelativeTime(new Date(now - 20_000).toISOString())).toBe("gerade eben");
+    expect(formatRelativeTime(new Date(now - 5 * 60_000).toISOString())).toBe("vor 5 Min");
   });
 });

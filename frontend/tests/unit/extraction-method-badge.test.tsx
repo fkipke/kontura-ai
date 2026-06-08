@@ -41,6 +41,12 @@ describe("ExtractionMethodBadge", () => {
     expect(badge).toBeInTheDocument();
   });
 
+  it("renders warning badge for not_an_invoice", () => {
+    render(<ExtractionMethodBadge method="not_an_invoice" />);
+
+    expect(screen.getByText("Keine Rechnung")).toBeInTheDocument();
+  });
+
   it("renders MINIMUM warning when zugferdProfile is minimum", () => {
     render(<ExtractionMethodBadge method="zugferd_v2" zugferdProfile="minimum" />);
 

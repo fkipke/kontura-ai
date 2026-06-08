@@ -6,6 +6,7 @@ const statusMap: Record<InvoiceStatus, { label: string; variant: "warning" | "su
   processing: { label: "Verarbeitung", variant: "warning" },
   completed: { label: "Fertig", variant: "success" },
   failed: { label: "Fehler", variant: "destructive" },
+  not_an_invoice: { label: "Keine Rechnung", variant: "destructive" },
 };
 
 export function getStatusMeta(status: InvoiceStatus) {

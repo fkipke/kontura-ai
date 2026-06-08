@@ -55,6 +55,7 @@ export const invoiceStatusSchema = z.enum([
   "processing",
   "completed",
   "failed",
+  "not_an_invoice",
 ]);
 
 export const extractionMethodSchema = z.enum([
@@ -62,6 +63,7 @@ export const extractionMethodSchema = z.enum([
   "xrechnung_cii",
   "zugferd_v2",
   "ai_vision",
+  "not_an_invoice",
 ]).nullable();
 
 export const zugferdProfileSchema = z
