@@ -7,7 +7,6 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Annotated
 
-import sqlalchemy as sa
 import structlog
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select, text
@@ -295,7 +294,7 @@ async def _build_alerts(tenant: TenantContext, session: AsyncSession) -> list[Da
             Invoice.vendor_name,
             Invoice.total_amount,
             func.count(Invoice.id).label("invoice_count"),
-            func.min(sa.cast(Invoice.id, sa.String)).label("sample_id"),
+            func.min(Invoice.invoice_number).label("sample_invoice_number"),
         )
         .where(
             Invoice.tenant_id == tenant.tenant_id,
@@ -314,7 +313,15 @@ async def _build_alerts(tenant: TenantContext, session: AsyncSession) -> list[Da
         Invoice.invoice_number,
         Invoice.vendor_name,
         Invoice.total_amount,
-    ).join(dup_subq, sa.cast(Invoice.id, sa.String) == dup_subq.c.sample_id)
+    ).join(
+        dup_subq,
+        (
+            (Invoice.tenant_id == tenant.tenant_id)
+            & (Invoice.vendor_name == dup_subq.c.vendor_name)
+            & (Invoice.total_amount == dup_subq.c.total_amount)
+            & (Invoice.invoice_number == dup_subq.c.sample_invoice_number)
+        ),
+    )
 
     dup_rows = (await session.execute(dup_rows_stmt)).all()
     for row in dup_rows:
