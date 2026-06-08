@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Annotated
 
+import sqlalchemy as sa
 import structlog
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select, text
@@ -288,24 +289,23 @@ async def _build_alerts(tenant: TenantContext, session: AsyncSession) -> list[Da
                 )
             )
 
-    # -- Potential duplicate: same (invoice_number, vendor_name, total_amount)
-    # but different invoice_date — detected purely in SQL via GROUP BY / HAVING --
+    # -- Potential duplicate: same vendor and amount across multiple invoices --
     dup_subq = (
         select(
-            Invoice.invoice_number,
             Invoice.vendor_name,
             Invoice.total_amount,
-            func.count(func.distinct(Invoice.invoice_date)).label("date_count"),
-            func.min(Invoice.id).label("sample_id"),
+            func.count(Invoice.id).label("invoice_count"),
+            func.min(sa.cast(Invoice.id, sa.String)).label("sample_id"),
         )
         .where(
             Invoice.tenant_id == tenant.tenant_id,
-            Invoice.invoice_number.is_not(None),
             Invoice.vendor_name.is_not(None),
+            Invoice.vendor_name != "",
+            Invoice.total_amount.is_not(None),
         )
-        .group_by(Invoice.invoice_number, Invoice.vendor_name, Invoice.total_amount)
-        .having(func.count(func.distinct(Invoice.invoice_date)) > 1)
-        .order_by(func.max(Invoice.invoice_date).desc())
+        .group_by(Invoice.vendor_name, Invoice.total_amount)
+        .having(func.count(Invoice.id) > 1)
+        .order_by(func.count(Invoice.id).desc())
         .limit(10)
         .subquery()
     )
@@ -314,7 +314,7 @@ async def _build_alerts(tenant: TenantContext, session: AsyncSession) -> list[Da
         Invoice.invoice_number,
         Invoice.vendor_name,
         Invoice.total_amount,
-    ).join(dup_subq, Invoice.id == dup_subq.c.sample_id)
+    ).join(dup_subq, sa.cast(Invoice.id, sa.String) == dup_subq.c.sample_id)
 
     dup_rows = (await session.execute(dup_rows_stmt)).all()
     for row in dup_rows:
@@ -326,8 +326,8 @@ async def _build_alerts(tenant: TenantContext, session: AsyncSession) -> list[Da
                 vendor_name=row.vendor_name,
                 total_amount=row.total_amount,
                 message=(
-                    f"Mögliche Doppelbuchung: Rechnung '{row.invoice_number}' "
-                    f"von '{row.vendor_name}' existiert mit unterschiedlichem Datum."
+                    f"Mögliche Doppelbuchung: Lieferant '{row.vendor_name}' "
+                    f"hat mehrere Rechnungen mit demselben Betrag ({row.total_amount:.2f} €)."
                 ),
                 severity="danger",
             )

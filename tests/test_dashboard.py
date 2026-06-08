@@ -240,19 +240,19 @@ async def test_alerts_empty_tenant(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_alerts_potential_duplicate(client: AsyncClient, session: AsyncSession) -> None:
-    """Doppelbuchung (gleiche Nr/Vendor/Betrag, unterschiedl. Datum) → danger Alert."""
+    """Doppelbuchung (gleicher Vendor+Betrag) → danger Alert."""
     session.add_all(
         [
             _inv(
                 TENANT_A,
-                invoice_number="DUP-001",
+                invoice_number="DUP-001-A",
                 vendor_name="Dup GmbH",
                 total_amount="100.00",
                 invoice_date=date(2024, 1, 1),
             ),
             _inv(
                 TENANT_A,
-                invoice_number="DUP-001",
+                invoice_number="DUP-001-B",
                 vendor_name="Dup GmbH",
                 total_amount="100.00",
                 invoice_date=date(2024, 2, 1),
@@ -277,14 +277,14 @@ async def test_alerts_tenant_isolation(client: AsyncClient, session: AsyncSessio
         [
             _inv(
                 TENANT_B,
-                invoice_number="B-DUP",
+                invoice_number="B-DUP-1",
                 vendor_name="B Vendor",
                 total_amount="999.00",
                 invoice_date=date(2024, 1, 1),
             ),
             _inv(
                 TENANT_B,
-                invoice_number="B-DUP",
+                invoice_number="B-DUP-2",
                 vendor_name="B Vendor",
                 total_amount="999.00",
                 invoice_date=date(2024, 2, 1),
