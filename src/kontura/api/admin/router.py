@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, cast
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kontura.admin.demo_seed import seed_demo_tenant
-from kontura.api.dependencies import SettingsDep
+from kontura.api.dependencies import get_settings
+from kontura.core.config import Settings
 from kontura.infra.db import get_session
 
 logger = structlog.get_logger(__name__)
@@ -17,6 +18,11 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+def _resolve_settings(request: Request) -> Settings:
+    override = request.app.dependency_overrides.get(get_settings, get_settings)
+    return cast(Settings, override())
 
 
 @router.post(
@@ -29,13 +35,14 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
     },
 )
 async def reset_demo(
-    app_settings: SettingsDep,
+    request: Request,
     session: SessionDep,
 ) -> None:
     """Loescht alle Demo-Daten und legt 50 neue Mock-Rechnungen an.
 
     Nur aktiv wenn KONTURA_DEMO_MODE=true — gibt sonst 403 zurueck.
     """
+    app_settings = _resolve_settings(request)
     if not app_settings.demo_mode:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
