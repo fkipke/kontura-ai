@@ -201,5 +201,37 @@ class Settings(BaseSettings):
         description="Default-Kreditorenkonto fuer DATEV-Export",
     )
 
+    # ==========================================
+    # Demo-Modus (Cluster 4)
+    # ==========================================
+    # demo_mode aktiviert /auth/demo-login und /admin/reset-demo.
+    # MUSS in Production False sein.
+    demo_mode: bool = Field(
+        default=False,
+        description="Demo-Modus aktivieren (nur fuer Dev/Staging, NIEMALS in Production!)",
+    )
+    # DEMO_USER_PASSWORD - haelt das Passwort des Demo-Users.
+    # Wird als bcrypt-Hash gespeichert. Klartext-String "demo" ist der Konvention-Default.
+    demo_user_password: str = Field(
+        default="demo",
+        description="Passwort fuer den Demo-User (wird bcrypt-gehasht gespeichert)",
+    )
+    demo_tenant_id: str = Field(
+        default="demo-tenant",
+        description="Tenant-ID fuer den Demo-Tenant",
+    )
+    demo_user_email: str = Field(
+        default="demo@kontura.ai",
+        description="E-Mail-Adresse des Demo-Users",
+    )
+
 
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    """Gibt die globale Settings-Instanz zurueck.
+
+    In Tests kann diese Funktion per dependency_overrides ausgetauscht werden.
+    """
+    return settings

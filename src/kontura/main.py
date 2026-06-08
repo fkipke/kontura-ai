@@ -10,7 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from kontura import __version__
 from kontura.ai.audit.audited_provider import AuditedAIProvider
 from kontura.ai.factory import get_ai_provider
+from kontura.api.admin.router import router as admin_router
 from kontura.api.auth import router as auth_router
+from kontura.api.dashboard.router import router as dashboard_router
 from kontura.api.error_handlers import register_exception_handlers
 from kontura.api.invoice_files import router as invoice_files_router
 from kontura.api.invoices import router as invoices_router
@@ -105,6 +107,8 @@ def create_app() -> FastAPI:
     app.include_router(invoices_router)
     app.include_router(invoice_files_router, prefix="/api/v1")
     app.include_router(vendor_mappings_router, prefix="/api/v1")
+    app.include_router(dashboard_router, prefix="/api/v1")
+    app.include_router(admin_router, prefix="/api/v1")
     app.include_router(api_v1_router)
 
     return app
