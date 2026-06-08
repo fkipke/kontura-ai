@@ -66,7 +66,7 @@ export default function InvoicesPage(): React.JSX.Element {
         onReset={resetFilters}
       />
 
-      <Card>
+      <Card className="min-h-[520px] transition-opacity duration-200">
         <CardContent className="p-0">
           <Table>
             <TableHeader>

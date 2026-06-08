@@ -32,7 +32,9 @@ export function AlertsCard({ alerts }: AlertsCardProps): React.JSX.Element {
         <h2 className="text-base font-semibold">Hinweise</h2>
 
         {visibleAlerts.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Keine Hinweise — alles sieht gut aus.</p>
+          <p className="text-sm text-muted-foreground">
+            Keine Hinweise — lade die erste Rechnung hoch, um Auffälligkeiten automatisch zu sehen.
+          </p>
         ) : (
           <ul className="space-y-3">
             {visibleAlerts.map((alert) => {
