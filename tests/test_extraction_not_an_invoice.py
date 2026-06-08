@@ -18,8 +18,8 @@ def _make_invoice_file(tenant_id: str) -> InvoiceFile:
     f = InvoiceFile(
         id=uuid.uuid4(),
         tenant_id=tenant_id,
-        filename="test.pdf",
-        mime_type="application/pdf",
+        filename="test.png",
+        mime_type="image/png",
         size_bytes=1024,
         sha256="a" * 64,
         storage_path=f"{tenant_id}/aa/{'a' * 64}",
@@ -43,7 +43,7 @@ async def test_all_null_payload_sets_not_an_invoice(session: AsyncSession, tmp_p
     await session.refresh(inv_file)
 
     # Storage befuellen
-    await storage.save("acme-corp", "a" * 64, b"%PDF-1.4 fake content")
+    await storage.save("acme-corp", "a" * 64, b"\x89PNG\r\n\x1a\n")
 
     fake_ai = FakeAIProvider()
     fake_ai.extraction_return_value = {
@@ -82,7 +82,7 @@ async def test_partial_missing_sets_failed(session: AsyncSession, tmp_path: Any)
     await session.commit()
     await session.refresh(inv_file)
 
-    await storage.save("acme-corp", "a" * 64, b"%PDF-1.4 fake content")
+    await storage.save("acme-corp", "a" * 64, b"\x89PNG\r\n\x1a\n")
 
     fake_ai = FakeAIProvider()
     # invoice_number and vendor_name and total_amount present, but invoice_date is invalid
