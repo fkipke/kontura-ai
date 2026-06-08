@@ -51,3 +51,42 @@ export function formatGermanDateTime(input: string | null | undefined): string {
     minute: "2-digit",
   }).format(date);
 }
+
+export function formatRelativeTime(input: string | null | undefined): string {
+  if (!input) {
+    return "–";
+  }
+
+  const date = new Date(input);
+  if (Number.isNaN(date.getTime())) {
+    return "–";
+  }
+
+  const now = Date.now();
+  const diffMs = Math.max(0, now - date.getTime());
+  const diffSeconds = Math.floor(diffMs / 1000);
+
+  if (diffSeconds < 60) {
+    return "gerade eben";
+  }
+
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) {
+    return `vor ${diffMinutes} Min`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `vor ${diffHours} Std`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) {
+    return `vor ${diffDays} Tagen`;
+  }
+
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "numeric",
+    month: "short",
+  }).format(date);
+}

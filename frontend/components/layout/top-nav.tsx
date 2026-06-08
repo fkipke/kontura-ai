@@ -15,7 +15,8 @@ interface TopNavProps {
 }
 
 const NAV_LINKS = [
-  { href: "/", label: "Rechnungen" },
+  { href: "/", label: "Übersicht" },
+  { href: "/invoices", label: "Eingangsrechnungen" },
   { href: "/exports", label: "Export" },
 ] as const;
 
@@ -36,16 +37,17 @@ export function TopNav({ email }: TopNavProps): React.JSX.Element {
           <Wordmark />
           <nav className="flex items-center gap-1" aria-label="Hauptnavigation">
             {NAV_LINKS.map(({ href, label }) => {
-              const isActive = pathname === href;
+              const isRoot = href === "/";
+              const isActive = isRoot ? pathname === "/" : pathname.startsWith(href);
               return (
                 <Link
                   key={href}
                   href={href}
                   className={cn(
-                    "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    "rounded-md border-b-2 border-transparent px-3 py-1.5 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-accent text-accent-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                      ? "border-primary text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                   aria-current={isActive ? "page" : undefined}
                 >
