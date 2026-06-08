@@ -10,6 +10,15 @@ interface CashflowChartProps {
   points: CashflowResponse["points"];
 }
 
+const CHART_MULTIPLIER_WIDTH = 42;
+const CHART_MIN_WIDTH = 480;
+const CHART_HEIGHT = 220;
+const CHART_BASELINE = 160;
+const CHART_BAR_WIDTH = 18;
+const CHART_BAR_MAX_HEIGHT = 120;
+const ZERO_AMOUNT_BAR_HEIGHT = 2;
+const MIN_BAR_HEIGHT = 6;
+
 function monthShortLabel(month: string): string {
   const date = new Date(`${month}-01T00:00:00`);
   if (Number.isNaN(date.getTime())) {
@@ -28,10 +37,10 @@ function monthLongLabel(month: string): string {
 
 export function CashflowChart({ points }: CashflowChartProps): React.JSX.Element {
   const chart = useMemo(() => {
-    const width = Math.max(points.length * 42, 480);
-    const height = 220;
-    const baseline = 160;
-    const barWidth = 18;
+    const width = Math.max(points.length * CHART_MULTIPLIER_WIDTH, CHART_MIN_WIDTH);
+    const height = CHART_HEIGHT;
+    const baseline = CHART_BASELINE;
+    const barWidth = CHART_BAR_WIDTH;
     const maxValue = Math.max(...points.map((point) => Number(point.total_amount) || 0), 1);
 
     return { width, height, baseline, barWidth, maxValue };
@@ -52,8 +61,8 @@ export function CashflowChart({ points }: CashflowChartProps): React.JSX.Element
             {points.map((point, index) => {
               const amount = Number(point.total_amount) || 0;
               const x = 30 + index * 38;
-              const rawHeight = (amount / chart.maxValue) * 120;
-              const barHeight = amount === 0 ? 2 : Math.max(rawHeight, 6);
+              const rawHeight = (amount / chart.maxValue) * CHART_BAR_MAX_HEIGHT;
+              const barHeight = amount === 0 ? ZERO_AMOUNT_BAR_HEIGHT : Math.max(rawHeight, MIN_BAR_HEIGHT);
               const y = chart.baseline - barHeight;
               const old = index < points.length - 4;
               const fillClass = old ? "fill-primary/40" : "fill-primary";

@@ -24,7 +24,10 @@ const DEFAULT_SORT: InvoiceSortKey = "date_desc";
 const DEFAULT_PAGE_SIZE = 25;
 
 function parseNumber(value: string | null, fallback: number): number {
-  const parsed = Number.parseInt(value ?? "", 10);
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
   if (Number.isNaN(parsed) || parsed < 1) {
     return fallback;
   }

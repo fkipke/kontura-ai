@@ -61,6 +61,7 @@ async function fetchInvoices(filters: InvoiceFilters): Promise<InvoiceListResult
   const params = new URLSearchParams();
   const q = filters.q.trim();
   if (q) {
+    // Backend contracts currently vary between `q` (spec) and `search` (existing router).
     params.set("q", q);
     params.set("search", q);
   }
@@ -74,6 +75,7 @@ async function fetchInvoices(filters: InvoiceFilters): Promise<InvoiceListResult
     params.set("vendor", filters.vendor);
   }
   if (filters.extractionMethod) {
+    // Backend contracts currently vary between `extraction_method` (spec) and `method` (existing router).
     params.set("extraction_method", filters.extractionMethod);
     params.set("method", filters.extractionMethod);
   }
@@ -91,10 +93,12 @@ async function fetchInvoices(filters: InvoiceFilters): Promise<InvoiceListResult
   }
 
   const sort = sortMap[filters.sort] ?? sortMap.date_desc;
+  // `sort` keeps URL/UI state stable, while `sort_by` + `sort_order` are used by the backend router.
   params.set("sort", filters.sort);
   params.set("sort_by", sort.sortBy);
   params.set("sort_order", sort.sortOrder);
 
+  // `page` + `page_size` are URL-state params; `limit` + `offset` are consumed by the backend router.
   params.set("page", String(filters.page));
   params.set("page_size", String(filters.pageSize));
   params.set("limit", String(filters.pageSize));

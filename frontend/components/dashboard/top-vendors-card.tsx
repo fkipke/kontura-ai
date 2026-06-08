@@ -7,6 +7,8 @@ interface TopVendorsCardProps {
   vendors: TopVendorsResponse["vendors"];
 }
 
+const MIN_BAR_WIDTH_PERCENT = 6;
+
 export function TopVendorsCard({ vendors }: TopVendorsCardProps): React.JSX.Element {
   const maxAmount = Math.max(...vendors.map((vendor) => Number(vendor.total_amount) || 0), 1);
 
@@ -21,7 +23,7 @@ export function TopVendorsCard({ vendors }: TopVendorsCardProps): React.JSX.Elem
           <ul className="space-y-3">
             {vendors.map((vendor) => {
               const amount = Number(vendor.total_amount) || 0;
-              const width = Math.max(6, (amount / maxAmount) * 100);
+              const width = Math.max(MIN_BAR_WIDTH_PERCENT, (amount / maxAmount) * 100);
               return (
                 <li key={vendor.vendor_name} className="space-y-1.5">
                   <div className="flex items-center justify-between gap-3">
