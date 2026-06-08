@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiClientError } from "@/lib/api/client";
-import { useLogin, useResendVerification } from "@/lib/api/auth";
+import { useDemoLogin, useLogin, useResendVerification } from "@/lib/api/auth";
 
 const loginSchema = z.object({
   email: z.string().email("Bitte gib eine gültige E-Mail-Adresse ein."),
@@ -24,7 +24,9 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export function LoginForm(): React.JSX.Element {
   const router = useRouter();
   const mutation = useLogin();
+  const demoMutation = useDemoLogin();
   const resendMutation = useResendVerification();
+  const isDemoEnabled = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -111,6 +113,39 @@ export function LoginForm(): React.JSX.Element {
       <Button className="w-full" type="submit" disabled={mutation.isPending}>
         {mutation.isPending ? "Anmeldung läuft…" : "Anmelden"}
       </Button>
+
+      {isDemoEnabled ? (
+        <div className="space-y-3">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">oder</span>
+            </div>
+          </div>
+          <Button
+            className="w-full"
+            type="button"
+            disabled={demoMutation.isPending}
+            onClick={async () => {
+              try {
+                await demoMutation.mutateAsync();
+                router.push("/");
+                router.refresh();
+              } catch (error) {
+                if (error instanceof ApiClientError && error.status === 403) {
+                  toast.error("Demo-Modus auf dem Server nicht aktiviert");
+                  return;
+                }
+                toast.error(error instanceof Error ? error.message : "Demo-Anmeldung fehlgeschlagen");
+              }
+            }}
+          >
+            {demoMutation.isPending ? "Demo wird gestartet…" : "🎬 Demo starten →"}
+          </Button>
+        </div>
+      ) : null}
 
       <p className="text-sm text-muted-foreground">
         Noch kein Konto?{" "}

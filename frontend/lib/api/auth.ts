@@ -47,6 +47,20 @@ export function useLogin() {
   });
 }
 
+export function useDemoLogin() {
+  return useMutation({
+    mutationFn: async () => {
+      return apiRequest(
+        "/api/proxy/auth/demo-login",
+        {
+          method: "POST",
+        },
+        parseOk,
+      );
+    },
+  });
+}
+
 export function useRegister() {
   return useMutation({
     mutationFn: async (payload: RegisterPayload): Promise<RegisterResponse> => {

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { DemoBanner } from "@/components/layout/demo-banner";
 import { TopNav } from "@/components/layout/top-nav";
 import { apiServerFetch } from "@/lib/server-api";
 import { readAuthToken } from "@/lib/auth/cookies";
@@ -25,6 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen">
       <TopNav email={email} />
+      {process.env.NEXT_PUBLIC_DEMO_MODE === "true" ? <DemoBanner /> : null}
       <div className="mx-auto w-full max-w-[1280px] px-4 py-6 md:px-6">{children}</div>
     </div>
   );
