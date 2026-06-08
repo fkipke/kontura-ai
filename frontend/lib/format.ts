@@ -5,6 +5,11 @@ const EUR_FORMATTER = new Intl.NumberFormat("de-DE", {
   maximumFractionDigits: 2,
 });
 
+const SECONDS_PER_MINUTE = 60;
+const MINUTES_PER_HOUR = 60;
+const HOURS_PER_DAY = 24;
+const DAYS_PER_WEEK = 7;
+
 export function formatCurrency(value: string | number | null | undefined): string {
   if (value == null) {
     return "–";
@@ -66,22 +71,22 @@ export function formatRelativeTime(input: string | null | undefined): string {
   const diffMs = Math.max(0, now - date.getTime());
   const diffSeconds = Math.floor(diffMs / 1000);
 
-  if (diffSeconds < 60) {
+  if (diffSeconds < SECONDS_PER_MINUTE) {
     return "gerade eben";
   }
 
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  if (diffMinutes < 60) {
+  const diffMinutes = Math.floor(diffSeconds / SECONDS_PER_MINUTE);
+  if (diffMinutes < MINUTES_PER_HOUR) {
     return `vor ${diffMinutes} Min`;
   }
 
-  const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) {
+  const diffHours = Math.floor(diffMinutes / MINUTES_PER_HOUR);
+  if (diffHours < HOURS_PER_DAY) {
     return `vor ${diffHours} Std`;
   }
 
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) {
+  const diffDays = Math.floor(diffHours / HOURS_PER_DAY);
+  if (diffDays < DAYS_PER_WEEK) {
     return `vor ${diffDays} Tagen`;
   }
 

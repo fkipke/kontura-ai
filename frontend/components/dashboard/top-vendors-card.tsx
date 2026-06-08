@@ -7,6 +7,7 @@ interface TopVendorsCardProps {
   vendors: TopVendorsResponse["vendors"];
 }
 
+// Kleine Werte bleiben sichtbar, damit auch kleine Anteile im Demo-Video erkennbar sind.
 const MIN_BAR_WIDTH_PERCENT = 6;
 
 export function TopVendorsCard({ vendors }: TopVendorsCardProps): React.JSX.Element {

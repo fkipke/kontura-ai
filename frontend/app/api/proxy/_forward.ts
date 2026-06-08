@@ -46,7 +46,7 @@ export async function forwardApiRequest(
 
   const headers = new Headers(request.headers);
   if (token) {
-    headers.set("Authorization", "Bearer " + token);
+    headers.set("Authorization", ["Bearer", token].join(" "));
   } else {
     headers.delete("Authorization");
   }

@@ -10,11 +10,13 @@ interface CashflowChartProps {
   points: CashflowResponse["points"];
 }
 
+// Basislayout für 12 Monatsbalken inkl. Achsen-Label.
 const CHART_MULTIPLIER_WIDTH = 42;
 const CHART_MIN_WIDTH = 480;
 const CHART_HEIGHT = 220;
 const CHART_BASELINE = 160;
 const CHART_BAR_WIDTH = 18;
+// Visuelle Skalierung: Bars nutzen max. 120px Höhe im Chart-Viewport.
 const CHART_BAR_MAX_HEIGHT = 120;
 const ZERO_AMOUNT_BAR_HEIGHT = 2;
 const MIN_BAR_HEIGHT = 6;
