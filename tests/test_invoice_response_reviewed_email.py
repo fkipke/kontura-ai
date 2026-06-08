@@ -11,6 +11,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kontura.infra.models.invoice import Invoice, InvoiceStatus
+from kontura.infra.models.user import User
 from tests.conftest import TEST_USER_IDS_BY_TENANT, auth_headers
 
 TENANT_A = "acme-corp"
@@ -69,19 +70,31 @@ async def test_reviewed_invoice_has_user_email(client: AsyncClient, session: Asy
 async def test_reviewed_but_user_deleted_returns_null_email(
     client: AsyncClient, session: AsyncSession
 ) -> None:
-    """Reviewer-User wurde geloescht → LEFT JOIN liefert null, Invoice ist noch sichtbar."""
-    missing_user_id = uuid.uuid4()  # User existiert nicht
+    """Reviewer-User wurde geloescht → Invoice bleibt sichtbar, Email ist null."""
+    ghost_user = User(
+        id=uuid.uuid4(),
+        tenant_id=TENANT_A,
+        email="ghost-reviewer@example.com",
+        password_hash="$2b$12$dummy.hash.for.tests.only.not.real.bcrypt",
+        email_verified_at=datetime.now(tz=UTC),
+    )
+    session.add(ghost_user)
+    await session.commit()
+
     inv = _make_invoice(TENANT_A, "RE-2024-GHOST")
     inv.is_reviewed = True
     inv.reviewed_at = datetime.now(tz=UTC)
-    inv.reviewed_by_user_id = missing_user_id
+    inv.reviewed_by_user_id = ghost_user.id
     session.add(inv)
     await session.commit()
     await session.refresh(inv)
+    invoice_id = inv.id
 
-    resp = await client.get(f"/invoices/{inv.id}", headers=HEADERS_A)
+    await session.delete(ghost_user)
+    await session.commit()
+
+    resp = await client.get(f"/invoices/{invoice_id}", headers=HEADERS_A)
     assert resp.status_code == 200
     body = resp.json()
-    # Invoice noch da, Email aber null wegen fehlenden Users (LEFT JOIN)
-    assert body["id"] == str(inv.id)
+    assert body["id"] == str(invoice_id)
     assert body["reviewed_by_user_email"] is None
