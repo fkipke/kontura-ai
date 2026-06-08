@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, cast
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -25,9 +25,9 @@ from kontura.api.auth.schemas import (
     VerifyEmailResponse,
 )
 from kontura.api.auth.service import AuthService
-from kontura.api.dependencies import EmailSenderDep, SettingsDep, TokenDep
+from kontura.api.dependencies import EmailSenderDep, TokenDep, get_settings
 from kontura.api.rate_limit import ip_key, limiter
-from kontura.core.config import settings
+from kontura.core.config import Settings, settings
 from kontura.core.exceptions import ConflictError, DomainValidationError
 from kontura.core.jwt import encode_token
 from kontura.core.security import hash_password
@@ -55,6 +55,11 @@ def _hash_token(token: str) -> str:
 
 def _build_verification_url(token: str) -> str:
     return f"{settings.app_base_url}/verify-email?token={token}"
+
+
+def _resolve_settings(request: Request) -> Settings:
+    override = request.app.dependency_overrides.get(get_settings, get_settings)
+    return cast(Settings, override())
 
 
 async def _send_verification_mail(
@@ -289,7 +294,7 @@ async def logout(token: TokenDep) -> None:  # noqa: ARG001
     },
 )
 async def demo_login(
-    app_settings: SettingsDep,
+    request: Request,
     session: SessionDep,
 ) -> TokenResponse:
     """Gibt einen JWT fuer den Demo-User zurueck.
@@ -297,6 +302,7 @@ async def demo_login(
     Nur aktiv wenn KONTURA_DEMO_MODE=true — gibt sonst 403 zurueck.
     Kein Passwort-Check: die ENV-Variable ist das Gate.
     """
+    app_settings = _resolve_settings(request)
     if not app_settings.demo_mode:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
