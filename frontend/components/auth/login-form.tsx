@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiClientError } from "@/lib/api/client";
-import { useLogin, useResendVerification } from "@/lib/api/auth";
+import { useDemoLogin, useLogin, useResendVerification } from "@/lib/api/auth";
+import { config } from "@/lib/config";
 
 const loginSchema = z.object({
   email: z.string().email("Bitte gib eine gültige E-Mail-Adresse ein."),
@@ -24,6 +25,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export function LoginForm(): React.JSX.Element {
   const router = useRouter();
   const mutation = useLogin();
+  const demoMutation = useDemoLogin();
   const resendMutation = useResendVerification();
 
   const form = useForm<LoginFormValues>({
@@ -111,6 +113,22 @@ export function LoginForm(): React.JSX.Element {
       <Button className="w-full" type="submit" disabled={mutation.isPending}>
         {mutation.isPending ? "Anmeldung läuft…" : "Anmelden"}
       </Button>
+
+      {config.demoMode && (
+        <Button
+          className="w-full"
+          type="button"
+          variant="secondary"
+          disabled={demoMutation.isPending}
+          onClick={async () => {
+            await demoMutation.mutateAsync();
+            router.replace("/");
+            router.refresh();
+          }}
+        >
+          {demoMutation.isPending ? "Demo wird gestartet…" : "Demo starten"}
+        </Button>
+      )}
 
       <p className="text-sm text-muted-foreground">
         Noch kein Konto?{" "}

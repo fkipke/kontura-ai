@@ -55,6 +55,9 @@ export const invoiceStatusSchema = z.enum([
   "processing",
   "completed",
   "failed",
+  "received",
+  "booked",
+  "exported",
 ]);
 
 export const extractionMethodSchema = z.enum([
@@ -155,6 +158,61 @@ export const invoiceResponseSchema = z.object({
   validation_warnings: z.array(validationWarningSchema),
 });
 
+export const invoiceListItemSchema = z.object({
+  id: z.string().uuid(),
+  invoice_number: z.string(),
+  vendor_name: z.string(),
+  invoice_date: z.string(),
+  total_amount: z.union([z.string(), z.number()]),
+  currency: z.string(),
+  status: invoiceStatusSchema,
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const dashboardKpisSchema = z.object({
+  open_invoices_count: z.number().int(),
+  open_invoices_total_amount: z.union([z.string(), z.number()]),
+  paid_this_month_total: z.union([z.string(), z.number()]),
+  skonto_expiring_soon_count: z.number().int(),
+  skonto_expiring_soon_potential_savings: z.union([z.string(), z.number()]),
+  vat_balance_current_quarter: z.union([z.string(), z.number()]),
+});
+
+export const cashflowPointSchema = z.object({
+  month: z.string(),
+  total_amount: z.union([z.string(), z.number()]),
+  invoice_count: z.number().int(),
+});
+
+export const cashflowResponseSchema = z.object({
+  points: z.array(cashflowPointSchema),
+});
+
+export const topVendorSchema = z.object({
+  vendor_name: z.string(),
+  invoice_count: z.number().int(),
+  total_amount: z.union([z.string(), z.number()]),
+});
+
+export const topVendorsResponseSchema = z.object({
+  vendors: z.array(topVendorSchema),
+});
+
+export const dashboardAlertSchema = z.object({
+  type: z.enum(["unusual_amount", "first_time_high_value_vendor", "potential_duplicate"]),
+  invoice_id: z.string().uuid(),
+  invoice_number: z.string().nullable(),
+  vendor_name: z.string().nullable(),
+  total_amount: z.union([z.string(), z.number()]).nullable(),
+  message: z.string(),
+  severity: z.enum(["info", "warning", "danger"]),
+});
+
+export const alertsResponseSchema = z.object({
+  alerts: z.array(dashboardAlertSchema),
+});
+
 export type ProblemDetail = z.infer<typeof problemDetailSchema>;
 export type LoginPayload = z.infer<typeof loginPayloadSchema>;
 export type RegisterPayload = z.infer<typeof registerPayloadSchema>;
@@ -169,3 +227,11 @@ export type ResendVerificationResponse = z.infer<typeof resendVerificationRespon
 export type ValidationWarning = z.infer<typeof validationWarningSchema>;
 export type InvoiceLineItem = z.infer<typeof invoiceLineItemSchema>;
 export type InvoiceResponse = z.infer<typeof invoiceResponseSchema>;
+export type InvoiceListItem = z.infer<typeof invoiceListItemSchema>;
+export type DashboardKpis = z.infer<typeof dashboardKpisSchema>;
+export type CashflowPoint = z.infer<typeof cashflowPointSchema>;
+export type CashflowResponse = z.infer<typeof cashflowResponseSchema>;
+export type TopVendor = z.infer<typeof topVendorSchema>;
+export type TopVendorsResponse = z.infer<typeof topVendorsResponseSchema>;
+export type DashboardAlert = z.infer<typeof dashboardAlertSchema>;
+export type AlertsResponse = z.infer<typeof alertsResponseSchema>;

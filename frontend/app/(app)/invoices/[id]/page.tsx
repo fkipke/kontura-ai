@@ -54,7 +54,7 @@ export default function InvoiceDetailPage(): React.JSX.Element {
     <>
       <div className="flex items-center gap-2 px-1 pb-2">
         <Link
-          href="/"
+          href="/invoices"
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
