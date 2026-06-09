@@ -14,21 +14,18 @@ interface PdfViewerProps {
  * Native PDF-Viewer via <iframe>.
  *
  * Wir nutzen bewusst KEIN react-pdf / pdf.js mehr:
- *  - Chrome, Firefox, Edge, Safari haben alle einen eingebauten PDF-Renderer
- *    mit Toolbar (Zoom, Seitennavigation, Suche, Druck, Download).
- *  - Kein zerbrechlicher worker.js-Pfad, kein Loading-Skeleton-Loop,
- *    kein Wrapper der bei 404/CORS/Cache stillschweigend stehen bleibt.
- *  - Die Browser-Toolbar sieht professioneller aus als jede custom-Lösung.
+ *  - Chrome, Firefox, Edge, Safari haben alle einen eingebauten PDF-Renderer.
+ *  - Kein zerbrechlicher worker.js-Pfad, kein Loading-Skeleton-Loop.
  *
- * Bonus: Wir geben dem User trotzdem oben zwei explizite Aktionen:
- *  - "Herunterladen" (mit dem originalen Dateinamen)
- *  - "In neuem Tab öffnen" (für maximalen Screen-Estate)
+ * Toolbar ist bewusst AUS (`#toolbar=0`) damit kein schwarzer Chrome-Balken
+ * über der Vorschau hängt - der Look soll hochprofessionell sein.
+ * Download &amp; "in neuem Tab" bieten wir über eigene Buttons oben rechts an.
  */
 export function PdfViewer({ file, filename }: PdfViewerProps): React.JSX.Element {
-  // #toolbar=1 stellt sicher, dass die Chrome-PDF-Toolbar sichtbar ist.
-  // Die fragment-id wird vom PDF-Plugin gelesen, nicht vom Server, daher
-  // funktioniert das problemlos mit unserer Proxy-URL.
-  const src = `${file}#toolbar=1&navpanes=0&view=FitH`;
+  // toolbar=0  -> keine schwarze Chrome-PDF-Toolbar (kein Frame mehr)
+  // navpanes=0 -> keine Seitenleiste mit Thumbnails
+  // view=FitH  -> PDF passt sich an die Breite des iframes an
+  const src = `${file}#toolbar=0&navpanes=0&view=FitH`;
 
   return (
     <Card className="h-full">
@@ -39,7 +36,7 @@ export function PdfViewer({ file, filename }: PdfViewerProps): React.JSX.Element
               {filename ?? "Rechnungsbeleg"}
             </p>
             <p className="text-xs text-muted-foreground">
-              Browser-Vorschau · Zoom &amp; Navigation in der Toolbar
+              Browser-Vorschau
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -62,12 +59,12 @@ export function PdfViewer({ file, filename }: PdfViewerProps): React.JSX.Element
             </a>
           </div>
         </div>
-        <div className="flex-1 overflow-hidden rounded-lg border bg-muted/30">
+        <div className="flex-1 overflow-hidden rounded-lg border bg-white">
           <iframe
             src={src}
             title={filename ?? "PDF-Vorschau"}
             className="h-full w-full"
-            style={{ minHeight: "60vh" }}
+            style={{ minHeight: "60vh", border: "none" }}
           />
         </div>
       </CardContent>
