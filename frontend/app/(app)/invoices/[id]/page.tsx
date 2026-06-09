@@ -8,6 +8,7 @@ import { ArrowLeft, RefreshCcw } from "lucide-react";
 
 import { ExtractionMethodBadge } from "@/components/invoices/extraction-method-badge";
 import { ExtractedFieldsPanel } from "@/components/invoices/extracted-fields-panel";
+import { PdfViewer } from "@/components/invoices/viewers/pdf-viewer";
 import { UniversalFileViewer } from "@/components/invoices/viewers/universal-file-viewer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,13 +19,13 @@ import { useExtractionStatus, useInvoiceFiles } from "@/lib/api/invoiceFiles";
 /**
  * Detail-Page fuer eine einzelne InvoiceFile.
  *
- * Architektur-Hinweis: Es existiert kein Backend-GET fuer EINE InvoiceFile - der
- * vorhandene `/api/v1/invoice-files`-Endpoint listet IMMER alles. Wir ziehen uns
- * die Metadaten daher aus der gecachten Liste. Falls die ID nicht in der Liste
- * gefunden wird (z.B. weil der Cache leer ist oder die Datei eben erst angelegt
- * wurde), forcen wir einen Refetch. Schlaegt auch der fehl, blenden wir einen
- * "Erneut laden"-Button + klaren Fehlerzustand ein - statt ewig "Vorschau wird
- * geladen..." stehen zu lassen.
+ * Wichtig: Es gibt KEIN Backend-GET-by-id. Wir suchen die Metadaten in der
+ * gecachten Liste. Falls die Liste leer ist (z.B. weil sie gerade noch laedt),
+ * rendern wir TROTZDEM schon die PDF-Vorschau via <PdfViewer> direkt mit der
+ * ID aus der URL - der Browser-PDF-Viewer braucht keine Metadaten.
+ *
+ * Dadurch sehen Nutzer NIE mehr ein endloses Skeleton; die PDF rendert sofort.
+ * Die extrahierten Felder rechts folgen, sobald die Liste durch ist.
  */
 export default function InvoiceDetailPage(): React.JSX.Element {
   const params = useParams<{ id: string }>();
@@ -39,7 +40,7 @@ export default function InvoiceDetailPage(): React.JSX.Element {
   const [hasRetried, setHasRetried] = useState(false);
   const hasRetriedRef = useRef(false);
 
-  // Falls die ID nicht in der Liste ist (frisch hochgeladen oder Cache leer),
+  // Falls ID nicht in der Liste ist (frisch hochgeladen / Cache leer),
   // einmalig Refetch erzwingen.
   useEffect(() => {
     if (
@@ -72,12 +73,15 @@ export default function InvoiceDetailPage(): React.JSX.Element {
     void queryClient.refetchQueries({ queryKey: ["extraction", id] });
   }, [queryClient, id]);
 
-  // Loading-State: erster Listen-Fetch laeuft noch ODER wir haben gerade den
-  // Retry getriggert.
-  const isInitialLoading = isListInitialLoading || (!invoice && !hasRetried);
-
-  // Hard-Error-State: Liste fertig, Retry durch, immer noch nichts gefunden.
+  // Hard-Error: Liste fertig, Retry durch, ID nirgends gefunden.
   const isNotFound = !invoice && hasRetried && !listQuery.isFetching;
+
+  // PDF-Vorschau: wir rendern OPTIMISTISCH sofort über die URL-ID,
+  // auch wenn die Metadaten der Liste noch nicht da sind. Falls die Datei
+  // tatsächlich nicht existiert, gibt das iframe einen 404 zurück und der
+  // "Diese Rechnung konnte nicht geladen werden"-State unten fängt es ab,
+  // sobald die Liste fertig durchgelaufen ist.
+  const fileUrl = `/api/proxy/api/v1/invoice-files/${id}`;
 
   return (
     <>
@@ -102,24 +106,7 @@ export default function InvoiceDetailPage(): React.JSX.Element {
       </div>
       <main className="grid min-h-[calc(100vh-8rem)] grid-cols-1 gap-4 lg:grid-cols-5">
         <section className="lg:col-span-3">
-          {invoice ? (
-            <UniversalFileViewer
-              fileId={invoice.id}
-              filename={invoice.filename}
-              mimeType={invoice.mime_type}
-              fileUrl={`/api/proxy/api/v1/invoice-files/${invoice.id}`}
-            />
-          ) : isInitialLoading ? (
-            <Card className="h-full">
-              <CardContent className="flex h-full flex-col gap-3 p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <Skeleton className="h-8 w-40" />
-                  <Skeleton className="h-8 w-32" />
-                </div>
-                <Skeleton className="h-[60vh] w-full" />
-              </CardContent>
-            </Card>
-          ) : isNotFound ? (
+          {isNotFound ? (
             <Card>
               <CardContent className="space-y-4 py-10 text-center">
                 <p className="text-sm font-medium">
@@ -143,30 +130,47 @@ export default function InvoiceDetailPage(): React.JSX.Element {
                 </div>
               </CardContent>
             </Card>
+          ) : invoice ? (
+            // Volle Metadaten verfügbar — nutze den Universal-Viewer
+            // (kann PDF / XML / PNG / JPEG je nach mime_type).
+            <UniversalFileViewer
+              fileId={invoice.id}
+              filename={invoice.filename}
+              mimeType={invoice.mime_type}
+              fileUrl={fileUrl}
+            />
           ) : (
-            <Card>
-              <CardContent className="py-8 text-sm text-muted-foreground">
-                Vorschau wird geladen…
-              </CardContent>
-            </Card>
+            // Liste laedt noch — wir nehmen an es ist ein PDF (häufigster Fall)
+            // und zeigen die Vorschau bereits an. Sobald Metadaten kommen,
+            // wechselt der View ggf. zum korrekten Viewer.
+            <PdfViewer file={fileUrl} />
           )}
         </section>
         <aside className="space-y-3 lg:col-span-2">
-          <ExtractionMethodBadge
-            method={invoice?.extraction_method ?? null}
-            zugferdProfile={extractionQuery.data?.result?.zugferd_profile ?? null}
-          />
-          <ExtractedFieldsPanel
-            invoice={invoice}
-            extraction={extractionQuery.data ?? null}
-            isInvoiceLoading={isListInitialLoading}
-            isExtractionLoading={isExtractionInitialLoading}
-            isInvoiceDataLoading={isInvoiceInitialLoading}
-            hasRetried={hasRetried}
-            invoiceData={invoiceQuery.data ?? null}
-            invoiceId={linkedInvoiceId}
-            onConflictReload={handleConflictReload}
-          />
+          {isListInitialLoading && !invoice ? (
+            <>
+              <Skeleton className="h-7 w-32" />
+              <Skeleton className="h-48 w-full" />
+            </>
+          ) : (
+            <>
+              <ExtractionMethodBadge
+                method={invoice?.extraction_method ?? null}
+                zugferdProfile={extractionQuery.data?.result?.zugferd_profile ?? null}
+              />
+              <ExtractedFieldsPanel
+                invoice={invoice}
+                extraction={extractionQuery.data ?? null}
+                isInvoiceLoading={isListInitialLoading}
+                isExtractionLoading={isExtractionInitialLoading}
+                isInvoiceDataLoading={isInvoiceInitialLoading}
+                hasRetried={hasRetried}
+                invoiceData={invoiceQuery.data ?? null}
+                invoiceId={linkedInvoiceId}
+                onConflictReload={handleConflictReload}
+              />
+            </>
+          )}
         </aside>
       </main>
     </>

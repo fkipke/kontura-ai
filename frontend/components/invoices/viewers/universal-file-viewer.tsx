@@ -22,7 +22,7 @@ export function UniversalFileViewer({
   let viewer: React.JSX.Element;
 
   if (lower === "application/pdf") {
-    viewer = <PdfViewer key={fileUrl} file={fileUrl} />;
+    viewer = <PdfViewer key={fileUrl} file={fileUrl} filename={filename} />;
   } else if (lower === "application/xml" || lower === "text/xml") {
     viewer = <XmlViewer key={fileUrl} fileUrl={fileUrl} filename={filename} />;
   } else if (lower === "image/png" || lower === "image/jpeg") {
@@ -31,5 +31,9 @@ export function UniversalFileViewer({
     viewer = <UnknownViewer key={fileUrl} fileUrl={fileUrl} filename={filename} mimeType={mimeType} />;
   }
 
-  return <div data-file-id={fileId}>{viewer}</div>;
+  return (
+    <div data-file-id={fileId} className="h-full">
+      {viewer}
+    </div>
+  );
 }
