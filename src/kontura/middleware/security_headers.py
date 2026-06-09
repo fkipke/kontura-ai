@@ -4,7 +4,7 @@ Setzt auf jede Response HTTP-Header, die Browser-seitig vor gaengigen
 Angriffen schuetzen:
 - HSTS               -> erzwingt HTTPS
 - nosniff            -> verhindert MIME-Type-Confusion
-- X-Frame-Options    -> verhindert Clickjacking via iframe
+- X-Frame-Options    -> verhindert Clickjacking via iframe (cross-origin)
 - Referrer-Policy    -> begrenzt Info-Leaks via Referer-Header
 - Permissions-Policy -> deaktiviert Browser-Features wie Kamera/Mikrofon
 
@@ -36,8 +36,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # MIME-Sniffing verhindern (Browser darf Content-Type nicht raten).
         response.headers["X-Content-Type-Options"] = "nosniff"
 
-        # Clickjacking verhindern (Seite nicht in fremde iframes einbettbar).
-        response.headers["X-Frame-Options"] = "DENY"
+        # Clickjacking verhindern - aber SAMEORIGIN erlauben, damit unsere
+        # eigene Frontend-App PDFs/Bilder in einem <iframe> rendern darf
+        # (z.B. /invoices/[id] zeigt den Beleg via Browser-PDF-Viewer im
+        # iframe an). Fremde Domains koennen unsere App weiterhin NICHT
+        # in ihre Seiten einbetten - also kein Sicherheits-Regress.
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
 
         # Referer-Header nur an gleichen Origin schicken (Privacy).
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
