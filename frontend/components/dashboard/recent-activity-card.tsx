@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDashboardRecentActivity } from "@/lib/api/dashboard";
@@ -36,21 +34,19 @@ export function RecentActivityCard(): React.JSX.Element {
         ) : (
           <ul className="divide-y divide-border">
             {data.map((inv) => (
-              <li key={inv.id} className="py-2.5">
-                <Link
-                  href={`/invoices/${inv.id}`}
-                  className="flex items-center justify-between gap-3 text-sm transition-colors hover:text-primary"
-                >
-                  <div className="min-w-0 flex-1 space-y-0.5">
-                    <p className="truncate font-medium">{inv.vendor_name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {inv.invoice_number} · {formatGermanDate(inv.invoice_date)}
-                    </p>
-                  </div>
-                  <span className="shrink-0 font-tnum text-sm">
-                    {formatCurrency(inv.total_amount)}
-                  </span>
-                </Link>
+              <li
+                key={inv.id}
+                className="flex items-center justify-between gap-3 py-2.5 text-sm"
+              >
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="truncate font-medium">{inv.vendor_name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {inv.invoice_number} · {formatGermanDate(inv.invoice_date)}
+                  </p>
+                </div>
+                <span className="shrink-0 font-tnum">
+                  {formatCurrency(inv.total_amount)}
+                </span>
               </li>
             ))}
           </ul>

@@ -75,6 +75,10 @@ export function useInvoiceFiles() {
         totalCount,
       };
     },
+    // Immer beim Page-Mount frisch holen — vermeidet "leere Liste" nach Upload
+    // wenn der Cache von einem vorherigen Page-Visit kommt.
+    refetchOnMount: "always",
+    staleTime: 0,
     refetchInterval: (query) => {
       const list = query.state.data?.items ?? [];
       const hasActive = list.some(
@@ -169,6 +173,8 @@ export function useUploadInvoice() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["invoice-files"] });
       await queryClient.refetchQueries({ queryKey: ["invoice-files"] });
+      // Dashboard-Karten ebenfalls aktualisieren
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
