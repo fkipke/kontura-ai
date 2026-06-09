@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,7 +54,8 @@ def _current_quarter_bounds(today: date) -> tuple[date, date]:
 )
 @limiter.limit(settings.rate_limit_default_per_tenant)
 async def get_kpis(
-    request: Request,  # noqa: ARG001
+    request: Request,  # noqa: ARG001 - slowapi
+    response: Response,  # noqa: ARG001 - slowapi Header-Injection (PFLICHT, sonst 500!)
     tenant: TenantDep,
     session: SessionDep,
 ) -> DashboardKpis:
@@ -108,7 +109,8 @@ async def get_kpis(
 )
 @limiter.limit(settings.rate_limit_default_per_tenant)
 async def get_cashflow(
-    request: Request,  # noqa: ARG001
+    request: Request,  # noqa: ARG001 - slowapi
+    response: Response,  # noqa: ARG001 - slowapi Header-Injection (PFLICHT, sonst 500!)
     tenant: TenantDep,
     session: SessionDep,
     months: Annotated[int, Query(ge=1, le=60)] = 12,
@@ -159,7 +161,8 @@ async def get_cashflow(
 )
 @limiter.limit(settings.rate_limit_default_per_tenant)
 async def get_top_vendors(
-    request: Request,  # noqa: ARG001
+    request: Request,  # noqa: ARG001 - slowapi
+    response: Response,  # noqa: ARG001 - slowapi Header-Injection (PFLICHT, sonst 500!)
     tenant: TenantDep,
     session: SessionDep,
     limit: Annotated[int, Query(ge=1, le=50)] = 5,
@@ -196,7 +199,8 @@ async def get_top_vendors(
 )
 @limiter.limit(settings.rate_limit_default_per_tenant)
 async def get_recent_activity(
-    request: Request,  # noqa: ARG001
+    request: Request,  # noqa: ARG001 - slowapi
+    response: Response,  # noqa: ARG001 - slowapi Header-Injection (PFLICHT, sonst 500!)
     tenant: TenantDep,
     session: SessionDep,
     limit: Annotated[int, Query(ge=1, le=50)] = 10,
@@ -352,7 +356,8 @@ async def _build_alerts(tenant: TenantContext, session: AsyncSession) -> list[Da
 )
 @limiter.limit(settings.rate_limit_default_per_tenant)
 async def get_alerts(
-    request: Request,  # noqa: ARG001
+    request: Request,  # noqa: ARG001 - slowapi
+    response: Response,  # noqa: ARG001 - slowapi Header-Injection (PFLICHT, sonst 500!)
     tenant: TenantDep,
     session: SessionDep,
 ) -> AlertsResponse:
