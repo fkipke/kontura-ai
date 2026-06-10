@@ -66,19 +66,42 @@ export function useInvoiceFiles() {
       }
 
       const body = (await response.json()) as unknown;
-      const parsed = invoiceFileSchema.array().parse(body);
+      // Schema-Parse mit safeParse damit wir bei kaputten Datensaetzen NICHT
+      // die ganze Liste verlieren - kaputte Items werden geloggt + weggefiltert.
+      const parsedItems: InvoiceFile[] = [];
+      if (Array.isArray(body)) {
+        for (const item of body) {
+          const result = invoiceFileSchema.safeParse(item);
+          if (result.success) {
+            parsedItems.push(result.data);
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn(
+              "[invoice-files] Skipping malformed item:",
+              result.error.issues,
+              item,
+            );
+          }
+        }
+      } else {
+        // eslint-disable-next-line no-console
+        console.error("[invoice-files] API did not return an array:", body);
+      }
+
       const totalRaw = response.headers.get("x-total-count");
-      const totalCount = totalRaw ? Number.parseInt(totalRaw, 10) : parsed.length;
+      const totalCount = totalRaw ? Number.parseInt(totalRaw, 10) : parsedItems.length;
 
       return {
-        items: parsed,
+        items: parsedItems,
         totalCount,
       };
     },
-    // Immer beim Page-Mount frisch holen — vermeidet "leere Liste" nach Upload
-    // wenn der Cache von einem vorherigen Page-Visit kommt.
+    // Immer beim Page-Mount frisch holen + Cache aggressiv eviciten -
+    // vermeidet "leere Liste" nach Navigation/Upload.
     refetchOnMount: "always",
+    refetchOnWindowFocus: true,
     staleTime: 0,
+    gcTime: 0,
     refetchInterval: (query) => {
       const list = query.state.data?.items ?? [];
       const hasActive = list.some(
