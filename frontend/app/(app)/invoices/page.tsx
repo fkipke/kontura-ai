@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, RefreshCcw } from "lucide-react";
@@ -39,6 +39,21 @@ export default function InvoicesPage(): React.JSX.Element {
 
   const items = invoiceFiles.data?.items ?? [];
   const totalCount = invoiceFiles.data?.totalCount ?? 0;
+
+  // Aggregate Counter im Header (rein clientseitig, kein extra API-Call).
+  const counters = useMemo(() => {
+    let completed = 0;
+    let processing = 0;
+    let failed = 0;
+    for (const it of items) {
+      if (it.extraction_status === "completed") completed += 1;
+      else if (it.extraction_status === "pending" || it.extraction_status === "processing")
+        processing += 1;
+      else if (it.extraction_status === "failed") failed += 1;
+    }
+    return { completed, processing, failed };
+  }, [items]);
+
   const showCountMismatch = items.length === 0 && totalCount > 0;
 
   return (
@@ -49,6 +64,35 @@ export default function InvoicesPage(): React.JSX.Element {
           <p className="text-sm text-muted-foreground">
             Übersicht aller hochgeladenen Belege
           </p>
+          {items.length > 0 && (
+            <p className="pt-1 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{items.length}</span>{" "}
+              {items.length === 1 ? "Beleg" : "Belege"}
+              <span className="mx-1.5">·</span>
+              <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                {counters.completed}
+              </span>{" "}
+              verarbeitet
+              {counters.processing > 0 && (
+                <>
+                  <span className="mx-1.5">·</span>
+                  <span className="font-medium text-amber-600 dark:text-amber-400">
+                    {counters.processing}
+                  </span>{" "}
+                  in Bearbeitung
+                </>
+              )}
+              {counters.failed > 0 && (
+                <>
+                  <span className="mx-1.5">·</span>
+                  <span className="font-medium text-rose-600 dark:text-rose-400">
+                    {counters.failed}
+                  </span>{" "}
+                  fehlgeschlagen
+                </>
+              )}
+            </p>
+          )}
         </div>
         <Button
           type="button"
