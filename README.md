@@ -5,7 +5,7 @@
 [![Next.js 15](https://img.shields.io/badge/next.js-15-black.svg)](https://nextjs.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**KI-gestützte Eingangsrechnungsverarbeitung mit DATEV-Export für den deutschen Mittelstand.**
+**KI-gestützte Eingangsrechnungsverarbeitung mit DATEV-Export.**
 
 PDF rein → GPT-4o liest aus → Plausibilitätsprüfung → Vier-Augen-Prüfung → DATEV-EXTF-Buchungsstapel raus.
 
@@ -13,7 +13,7 @@ PDF rein → GPT-4o liest aus → Plausibilitätsprüfung → Vier-Augen-Prüfun
 
 ## ▶ Demo (2:47)
 
-🎬 **[Video-Demo auf YouTube ansehen](https://youtu.be/REPLACE_WITH_YOUTUBE_ID)**
+🎬 **[Video-Demo auf YouTube ansehen](https://youtu.be/gf5iux2KypM)**
 
 End-to-End-Walkthrough: Login → Dashboard → PDF-Upload mit Live-Extraktion → Validierungswarnung → Geprüft-Markierung mit Audit-Trail → DATEV-Export-Vorschau → CSV-Download → Dark Mode.
 
@@ -21,9 +21,9 @@ End-to-End-Walkthrough: Login → Dashboard → PDF-Upload mit Live-Extraktion �
 
 ## Was es löst
 
-Buchhaltungsteams in deutschen Mittelständlern tippen **Eingangsrechnungen aus PDFs ab**, kontieren von Hand und exportieren nach DATEV. 80 % der Zeit ist Maschinenarbeit, die jeder Buchhalter hasst.
+Buchhaltungsteams in deutschen Mittelständlern tippen in der Regel **Eingangsrechnungen aus PDFs ab**, kontieren von Hand und exportieren nach DATEV. 80 % der Zeit ist Maschinenarbeit, die jeder Buchhalter hasst.
 
-Kontura erledigt diese 80 % automatisch — die fachliche Prüfung bleibt beim Menschen. Vier-Augen-Prinzip, GoBD-konformer Audit-Trail, keine Black-Box-Entscheidungen.
+Kontura erledigt diese 80 % automatisch, die fachliche Prüfung bleibt hierbei jedoch beim Menschen. Vier-Augen-Prinzip, GoBD-konformer Audit-Trail, keine Black-Box-Entscheidungen.
 
 ---
 
