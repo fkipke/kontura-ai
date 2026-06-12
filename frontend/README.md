@@ -1,41 +1,61 @@
-# Kontura Frontend (G3.1 Foundation)
+# Kontura — Frontend
 
-Premium-UI für Kontura mit Next.js (App Router), TanStack Query und einer serverseitigen Proxy-Schicht zum FastAPI-Backend.
+Next.js 15 App Router · React 19 · TanStack Query · shadcn/ui · Tailwind
+
+Das Frontend von [Kontura AI](../README.md). Premium-UI mit serverseitiger Proxy-Schicht zum FastAPI-Backend und httpOnly-Cookie-Auth (kein Token im JS-Land).
 
 ## Quick Start
 
 ```bash
-pnpm install
+npm install
 cp .env.example .env.local
-pnpm dev
+npm run dev
 ```
 
-Qualitätssicherung:
+App: <http://localhost:3000> (Backend muss unter <http://localhost:8000> laufen.)
+
+## Quality-Gates
 
 ```bash
-pnpm lint
-pnpm typecheck
-pnpm build
-pnpm test
+npm run lint        # ESLint
+npm run typecheck   # tsc --noEmit
+npm run build       # Production-Build
+npm test            # Vitest Unit-Tests
 ```
 
 ## Umgebungsvariablen
 
-- `NEXT_PUBLIC_API_BASE_URL` (Standard: `http://localhost:8000`)
+| Variable | Default | Zweck |
+|---|---|---|
+| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | URL des FastAPI-Backends für serverseitige Proxy-Calls |
 
-Das Backend muss lokal unter `http://localhost:8000` laufen.
+## Verzeichnis-Überblick
 
-## Ordnerüberblick
-
-- `app/` – Routen, Layouts, Route Handler (`/api/auth/*`, `/api/proxy/*`)
-- `components/` – UI (Auth, Layout, Invoices, primitives)
-- `lib/api/` – typisierte API-Clients + Zod-Schemas
-- `lib/auth/` – httpOnly-Cookie-Helfer
-- `tests/unit/` – Vitest Unit-Tests
+```
+app/
+  (auth)/        Login & Register (öffentlich)
+  (app)/         Geschützte Routen (Dashboard, Rechnungen, Export)
+  api/auth/      Route-Handler: Login → setzt httpOnly-Cookie
+  api/proxy/     Proxy: hängt Bearer-Token serverseitig an Backend-Requests
+components/
+  auth/          Login/Register-Formulare
+  exports/       DATEV-Export mit Live-Vorschau
+  invoices/      Liste, Detail-View, Editor, Validierungs-Panel
+  layout/        Top-Nav, Theme-Toggle
+  ui/            shadcn/ui Primitives (Button, Card, Table …)
+lib/
+  api/           Typisierte API-Clients + Zod-Schemas
+  auth/          httpOnly-Cookie-Helfer
+tests/unit/      Vitest Unit-Tests
+```
 
 ## Auth-Flow (kurz)
 
-1. Login/Register sendet Credentials an Next-Route-Handler (`/api/auth/login`, `/api/auth/register`).
-2. Der Handler ruft FastAPI auf und setzt den JWT in einen `httpOnly` Cookie.
-3. Client-Komponenten sprechen nur mit `/api/proxy/*`; der Proxy hängt den Bearer Token serverseitig an.
-4. Middleware schützt App-Routen und leitet bei fehlender Session auf `/login` um.
+1. `POST /api/auth/login` (Next.js Route-Handler) ruft FastAPI-Backend auf.
+2. Erfolgreicher JWT landet in httpOnly-Cookie — nie im JS lesbar.
+3. Alle Client-Calls gehen an `/api/proxy/*`; der Proxy hängt den Bearer-Token serverseitig an.
+4. Middleware schützt `(app)/*`-Routen und leitet bei fehlender Session auf `/login` um.
+
+## Theming
+
+Light + Dark Mode via `next-themes`, Theme-Toggle in der Top-Nav. Farbsystem aus shadcn/ui Tokens, einheitlich über CSS-Variablen.
