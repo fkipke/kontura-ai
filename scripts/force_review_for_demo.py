@@ -8,6 +8,11 @@ Problem im Demo-Setup:
   ist), kann das Frontend ein gruenes "Geprueft"-Badge zeigen, der
   DATEV-Export sieht die Rechnung aber trotzdem nicht.
 
+  Zweites Problem: Auch wenn eine Invoice existiert, kann das Rechnungsdatum
+  aus der KI-Extraktion in einem alten Jahr liegen (z.B. 2018) und damit aus
+  dem Filter "Dieses Jahr" der Export-UI rausfallen. Fuer ein Demo-Video soll
+  GetraenkeBoB und RE-TEST aber im aktuellen Jahr erscheinen.
+
 Dieses Skript stellt fuer eine Liste von Dateinamen-Mustern sicher:
   1. Die InvoiceFile existiert (sonst Warnung).
   2. Es gibt eine verknuepfte Invoice mit sinnvollen Feldwerten
@@ -15,18 +20,14 @@ Dieses Skript stellt fuer eine Liste von Dateinamen-Mustern sicher:
   3. ``Invoice.is_reviewed = True`` ist gesetzt.
   4. ``reviewed_at`` und ``reviewed_by_user_id`` sind gesetzt.
   5. ``invoice_files.invoice_id`` zeigt auf die richtige Invoice.
+  6. Fuer die Demo-Files ist das ``invoice_date`` *zwingend* auf ein Datum im
+     laufenden Jahr (2026) gesetzt - egal welches Datum die KI extrahiert hat.
+     So erscheinen sie im Export-Filter "Dieses Jahr" zuverlaessig ganz unten.
 
 Idempotent - mehrfache Ausfuehrung ist sicher.
 
 Usage:
     uv run python scripts/force_review_for_demo.py
-
-Die Suche nach Dateinamen ist case-insensitive und benutzt ILIKE-Wildcards:
-z.B. ``getrankebob`` matcht ``GetraenkeBoB - Test.pdf``,
-``GetränkeBob.pdf`` etc.
-
-Der Ziel-Tenant kommt aus ``settings.demo_tenant_id``. Sollten mehrere
-Dateien matchen, werden ALLE behandelt.
 """
 
 from __future__ import annotations
@@ -62,6 +63,25 @@ TARGET_NAME_PATTERNS: list[str] = [
     "retest",
 ]
 
+# Fest verdrahtetes Rechnungsdatum pro Demo-Datei - der wichtigste Eingriff
+# dieses Skripts. Wir zwingen die Werte ins aktuelle Jahr, damit der Filter
+# "Dieses Jahr" sie zuverlaessig zeigt. Reihenfolge der Patterns ist
+# absichtlich "spezifisch zuerst" (re-test vor retest).
+_PATTERN_ORDER: list[str] = [
+    "re-test",
+    "re_test",
+    "retest",
+    "getraenkebob",
+    "getrankebob",
+]
+FORCED_DATES: dict[str, date] = {
+    "re-test": date(2026, 6, 5),
+    "re_test": date(2026, 6, 5),
+    "retest": date(2026, 6, 5),
+    "getraenkebob": date(2026, 5, 20),
+    "getrankebob": date(2026, 5, 20),
+}
+
 # Fallback-Werte falls die Extraction-Result nichts brauchbares liefert.
 # Wir setzen ein realistisches deutsches Demo-Datum + sinnvolle Betraege,
 # damit die Vorschau nicht leer aussieht.
@@ -76,6 +96,15 @@ def _strip_accents(value: str) -> str:
     """Entfernt deutsche Umlaute fuer den Pattern-Vergleich."""
     nfkd = unicodedata.normalize("NFKD", value)
     return "".join(ch for ch in nfkd if not unicodedata.combining(ch))
+
+
+def _pick_forced_date(filename: str) -> date | None:
+    """Liefert das fest verdrahtete Demo-Datum oder None."""
+    lower = _strip_accents(filename).lower()
+    for pattern in _PATTERN_ORDER:
+        if pattern in lower:
+            return FORCED_DATES[pattern]
+    return None
 
 
 def _coerce_decimal(value: Any) -> Decimal | None:
@@ -174,8 +203,6 @@ async def _ensure_invoice(
         existing = await session.get(Invoice, inv_file.invoice_id)
         if existing is not None:
             return existing
-        # Hint: invoice_id zeigt ins Leere - wir legen unten neu an und
-        # ueberschreiben die Verknuepfung.
 
     raw_result: dict[str, Any] = (
         inv_file.extraction_result if isinstance(inv_file.extraction_result, dict) else {}
@@ -193,7 +220,12 @@ async def _ensure_invoice(
         session, inv_file.tenant_id, invoice_number_candidate
     )
 
-    invoice_date_val = _coerce_date(raw_result.get("invoice_date")) or FALLBACK_INVOICE_DATE
+    # Forced-Date hat Vorrang vor extrahiertem Datum.
+    invoice_date_val = (
+        _pick_forced_date(inv_file.filename)
+        or _coerce_date(raw_result.get("invoice_date"))
+        or FALLBACK_INVOICE_DATE
+    )
     total = _coerce_decimal(raw_result.get("total_amount")) or FALLBACK_TOTAL
     net = _coerce_decimal(raw_result.get("net_amount")) or FALLBACK_NET
     tax = _coerce_decimal(raw_result.get("tax_amount")) or FALLBACK_TAX
@@ -226,6 +258,7 @@ async def _ensure_invoice(
         invoice_number=invoice_number,
         vendor_name=vendor_name,
         total_amount=str(total),
+        invoice_date=invoice_date_val.isoformat(),
     )
     return new_invoice
 
@@ -246,8 +279,21 @@ async def _force_review_for_file(
 
     if not invoice.vendor_name:
         invoice.vendor_name = _extract_vendor_from_filename(inv_file.filename)
-    if invoice.invoice_date is None:
+
+    # Datum erzwingen - wichtigster Fix dieses Skripts. Ueberschreibt auch
+    # existierende (alte) Daten aus der KI-Extraktion.
+    forced_date = _pick_forced_date(inv_file.filename)
+    if forced_date is not None and invoice.invoice_date != forced_date:
+        logger.info(
+            "force_review.date_override",
+            filename=inv_file.filename,
+            old_date=invoice.invoice_date.isoformat() if invoice.invoice_date else None,
+            new_date=forced_date.isoformat(),
+        )
+        invoice.invoice_date = forced_date
+    elif invoice.invoice_date is None:
         invoice.invoice_date = FALLBACK_INVOICE_DATE
+
     if invoice.total_amount is None or Decimal(invoice.total_amount) <= 0:
         invoice.total_amount = FALLBACK_TOTAL
     if invoice.net_amount is None:
@@ -297,10 +343,16 @@ async def main() -> None:
                 f"{len(files)} Datei(en) im Tenant '{tenant_id}' gefunden:"
             )
             for inv_file in files:
-                print(f"  - {inv_file.filename}  (id={inv_file.id})")
+                forced = _pick_forced_date(inv_file.filename)
+                forced_str = forced.isoformat() if forced else "(kein forced date)"
+                print(
+                    f"  - {inv_file.filename}  (id={inv_file.id})  -> Datum: {forced_str}"
+                )
                 await _force_review_for_file(session, inv_file, reviewer_id)
 
-            print("Alle Ziel-Dateien wurden auf 'gepr\u00fcft' gesetzt und sind nun exportierbar.")
+            print(
+                "Fertig. Alle Ziel-Dateien sind 'gepr\u00fcft' und im aktuellen Jahr datiert."
+            )
 
 
 if __name__ == "__main__":
